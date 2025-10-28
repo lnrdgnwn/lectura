@@ -5,22 +5,21 @@ import (
 	"final_project/database"
 	"final_project/routes"
 
-	"fmt"
-	"log"
-	"net/http"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 func main() {
 	config.ENVLoad()
-	database.InitDB()
-	fmt.Println("Database Connected")
-	defer database.DB.Close()
+	database.DBLoad()
+	database.DBMigrate()
+	app := fiber.New()
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     "http://localhost:5173/",
+		AllowCredentials: true,
+	}))
+	app.Static("/assets", "./assets")
 
-	database.Migrate()
-	fmt.Println("Migration Success")
-
-	routes.SetupRoutes()
-
-	fmt.Println("Server running at http://localhost:8080/")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	routes.RoutesList(app)
+	app.Listen(":3000")
 }
