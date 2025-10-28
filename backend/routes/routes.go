@@ -7,4 +7,5 @@ func RoutesList(app *fiber.App) {
 	authRoutes(api)
 	novelRoutes(api)
 	userRoutes(api)
+	bookmarkRoutes(api)
 }
