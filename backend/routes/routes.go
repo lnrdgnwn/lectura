@@ -8,4 +8,5 @@ func RoutesList(app *fiber.App) {
 	novelRoutes(api)
 	userRoutes(api)
 	bookmarkRoutes(api)
+	chapterRoutes(api)
 }
