@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // ----------------- Helpers -----------------
@@ -54,30 +56,6 @@ func signAccessToken(userID uint, role string, ttlMinutes int) (string, time.Tim
 	return signed, exp, err
 }
 
-// convert c.Locals("user_id") ke uint
-func getUserIDFromLocals(c *fiber.Ctx) (uint, error) {
-	v := c.Locals("user_id")
-	if v == nil {
-		return 0, errors.New("user_id missing")
-	}
-	switch t := v.(type) {
-	case float64:
-		return uint(t), nil
-	case int:
-		return uint(t), nil
-	case int64:
-		return uint(t), nil
-	case uint:
-		return t, nil
-	case string:
-		// parse string
-		if n, err := strconv.Atoi(t); err == nil {
-			return uint(n), nil
-		}
-	}
-	return 0, errors.New("cannot convert user_id")
-}
-
 func getIPPtr(c *fiber.Ctx) *string {
 	ip := c.IP()
 	if ip == "" {
@@ -94,13 +72,6 @@ func getUserAgentPtr(c *fiber.Ctx) *string {
 	return &ua
 }
 
-// revokeAllUserTokens -> tandai semua token user sebagai revoked
-func revokeAllUserTokens(userID uint) error {
-	return database.DB.Model(&models.RefreshToken{}).
-		Where("user_id = ?", userID).
-		Updates(map[string]interface{}{"revoked": true}).Error
-}
-
 // ----------------- Auth handlers -----------------
 
 // Register: POST /api/v1/auth/register
@@ -111,7 +82,7 @@ func Register(c *fiber.Ctx) error {
 		Password string `json:"password"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Masukkan Field dengan benar"})
 	}
 	body.Username = strings.TrimSpace(body.Username)
 	body.Email = strings.TrimSpace(body.Email)
@@ -156,7 +127,7 @@ func Login(c *fiber.Ctx) error {
 		Password string `json:"password"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Masukkan Field dengan benar"})
 	}
 	body.Email = strings.TrimSpace(body.Email)
 	if body.Email == "" || body.Password == "" {
@@ -182,6 +153,16 @@ func Login(c *fiber.Ctx) error {
 	accessToken, exp, err := signAccessToken(u.ID, u.Role, accessTTL)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat access token"})
+	}
+
+	// SINGLE-ACTIVE STRATEGY:
+	// Revoke semua refresh token lama untuk user ini terlebih dahulu,
+	// sehingga hanya akan ada satu active token (yang akan kita buat sekarang).
+	if err := database.DB.Model(&models.RefreshToken{}).
+		Where("user_id = ? AND revoked = ?", u.ID, false).
+		Updates(map[string]interface{}{"revoked": true}).Error; err != nil {
+		// tidak fatal untuk user, tapi log dan return error 500
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal revoke token lama"})
 	}
 
 	// buat refresh token raw, simpan hash di DB (lebih aman)
@@ -228,34 +209,28 @@ func Refresh(c *fiber.Ctx) error {
 
 	hash := hashToken(rtValue)
 
-	var old models.RefreshToken
-	if err := database.DB.Where("token_hash = ?", hash).First(&old).Error; err != nil {
-		// token tidak ditemukan -> kemungkinan reuse atau invalid
+	var rtRecord models.RefreshToken
+	if err := database.DB.Where("token_hash = ?", hash).First(&rtRecord).Error; err != nil {
+		// token tidak ditemukan -> invalid
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token tidak valid"})
 	}
 
 	// cek kondisi token
-	if old.Revoked {
-		// reuse suspected — revoke semua token user
-		_ = revokeAllUserTokens(old.UserID)
+	if rtRecord.Revoked {
+		// sudah direvoke -> tolak
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token revoked"})
 	}
-	if time.Now().After(old.ExpiresAt) {
+	if time.Now().After(rtRecord.ExpiresAt) {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token kadaluarsa"})
 	}
-	// kalau token sudah diganti (replaced_by != nil) => reuse
-	if old.ReplacedBy != nil {
-		_ = revokeAllUserTokens(old.UserID)
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token reuse detected"})
-	}
 
-	// load user
+	// ambil user
 	var u models.User
-	if err := database.DB.First(&u, old.UserID).Error; err != nil {
+	if err := database.DB.First(&u, rtRecord.UserID).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "user tidak ditemukan"})
 	}
 
-	// buat access token baru
+	// buat access token baru saja (tidak mengganti refresh token)
 	accessTTL := 15
 	if v := os.Getenv("ACCESS_TTL_MIN"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -267,44 +242,73 @@ func Refresh(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat access token"})
 	}
 
-	// rotate refresh token: buat new token (hash) & set parent -> revoke old + set replaced_by
-	newRaw, err := generateRandomHex(32)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat refresh token baru"})
-	}
-	newHash := hashToken(newRaw)
-
-	tx := database.DB.Begin()
-	newRT := models.RefreshToken{
-		UserID:    u.ID,
-		TokenHash: newHash,
-		ParentID:  &old.ID,
-		Revoked:   false,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-		CreatedAt: time.Now(),
-		IPAddress: getIPPtr(c),
-		UserAgent: getUserAgentPtr(c),
-	}
-	if err := tx.Create(&newRT).Error; err != nil {
-		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan refresh token baru"})
-	}
-	// update old: set replaced_by = newRT.ID, revoked = true
-	if err := tx.Model(&models.RefreshToken{}).Where("id = ?", old.ID).
-		Updates(map[string]interface{}{"replaced_by": newRT.ID, "revoked": true}).Error; err != nil {
-		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal revoke token lama"})
-	}
-	if err := tx.Commit().Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal commit transaksi token"})
-	}
-
+	// kembalikan access token baru dan juga refresh token yang sama (client tetap
+	// memakai rtValue sampai ia di-revoke atau expired)
 	return c.JSON(fiber.Map{
 		"access_token":       accessToken,
 		"access_expires_at":  exp.Format(time.RFC3339),
-		"refresh_token":      newRaw,
-		"refresh_expires_at": newRT.ExpiresAt.Format(time.RFC3339),
+		"refresh_token":      rtValue,
+		"refresh_expires_at": rtRecord.ExpiresAt.Format(time.RFC3339),
 	})
+}
+
+func ChangePassword(c *fiber.Ctx) error {
+	uid, err := getUserIDFromLocals2(c)
+	if err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+	}
+
+	// support JSON atau form-data
+	var payload struct {
+		OldPassword string `json:"old_password" form:"old_password"`
+		NewPassword string `json:"new_password" form:"new_password"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+	}
+
+	payload.OldPassword = strings.TrimSpace(payload.OldPassword)
+	payload.NewPassword = strings.TrimSpace(payload.NewPassword)
+
+	if payload.OldPassword == "" || payload.NewPassword == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "old_password dan new_password wajib diisi"})
+	}
+	if payload.OldPassword == payload.NewPassword {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru harus berbeda dari password lama"})
+	}
+	// opsional: validasi panjang minimal password
+	if len(payload.NewPassword) < 8 {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru minimal 8 karakter"})
+	}
+
+	// ambil user
+	var u models.User
+	if err := database.DB.First(&u, uid).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "user tidak ditemukan"})
+		}
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+	}
+
+	// verifikasi old password
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(payload.OldPassword)); err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "password lama salah"})
+	}
+
+	// hash password baru dan simpan
+	hashed, err := bcrypt.GenerateFromPassword([]byte(payload.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memproses password baru"})
+	}
+
+	u.PasswordHash = string(hashed)
+	u.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(&u).Error; err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan password baru"})
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "password berhasil diubah"})
 }
 
 // Logout: POST /api/v1/auth/logout
