@@ -15,6 +15,6 @@ func userRoutes(api fiber.Router) {
 	api.Put("/users/me/password", middlewares.AuthMiddleware(), controllers.ChangePassword)
 
 	// admin-only user management
-	api.Get("/admin/users", controllers.ListUsers, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Delete("/admin/users/:id", controllers.DeleteUser, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
+	api.Get("/admin/users", middlewares.AuthMiddleware(), middlewares.AdminMiddleware(),controllers.ListUsers)
+	api.Delete("/admin/users/:id",  middlewares.AuthMiddleware(), middlewares.AdminMiddleware(),controllers.DeleteUser)
 }

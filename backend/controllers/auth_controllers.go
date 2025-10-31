@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 // ----------------- Helpers -----------------
@@ -251,66 +249,6 @@ func Refresh(c *fiber.Ctx) error {
 		"refresh_expires_at": rtRecord.ExpiresAt.Format(time.RFC3339),
 	})
 }
-
-func ChangePassword(c *fiber.Ctx) error {
-	uid, err := getUserIDFromLocals2(c)
-	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
-	}
-
-	// support JSON atau form-data
-	var payload struct {
-		OldPassword string `json:"old_password" form:"old_password"`
-		NewPassword string `json:"new_password" form:"new_password"`
-	}
-	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
-	}
-
-	payload.OldPassword = strings.TrimSpace(payload.OldPassword)
-	payload.NewPassword = strings.TrimSpace(payload.NewPassword)
-
-	if payload.OldPassword == "" || payload.NewPassword == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "old_password dan new_password wajib diisi"})
-	}
-	if payload.OldPassword == payload.NewPassword {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru harus berbeda dari password lama"})
-	}
-	// opsional: validasi panjang minimal password
-	if len(payload.NewPassword) < 8 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru minimal 8 karakter"})
-	}
-
-	// ambil user
-	var u models.User
-	if err := database.DB.First(&u, uid).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "user tidak ditemukan"})
-		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
-	}
-
-	// verifikasi old password
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(payload.OldPassword)); err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "password lama salah"})
-	}
-
-	// hash password baru dan simpan
-	hashed, err := bcrypt.GenerateFromPassword([]byte(payload.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memproses password baru"})
-	}
-
-	u.PasswordHash = string(hashed)
-	u.UpdatedAt = time.Now()
-
-	if err := database.DB.Save(&u).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan password baru"})
-	}
-
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "password berhasil diubah"})
-}
-
 // Logout: POST /api/v1/auth/logout
 // body: { "refresh_token" } -> set revoked = true
 func Logout(c *fiber.Ctx) error {

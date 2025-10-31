@@ -67,28 +67,45 @@ func UpdateProfile(c *fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
 	}
 
-	// ambil fields
-	username := c.FormValue("username")
-	email := c.FormValue("email")
-	newPass := c.FormValue("password")
+	// 1) Coba parse JSON body dulu (support application/json)
+	var payload struct {
+		Username string `json:"username" form:"username"`
+		Email    string `json:"email" form:"email"`
+		Password string `json:"password" form:"password"`
+	}
+	_ = c.BodyParser(&payload) // BodyParser bekerja untuk JSON dan juga x-www-form-urlencoded
 
-	if username != "" {
-		u.Username = strings.TrimSpace(username)
+	// 2) Jika BodyParser gagal atau kosong, fallback ke FormValue (berguna saat multipart/form-data)
+	// (BodyParser sudah menangani urlencoded; untuk multipart kita perlu FormValue dan FormFile)
+	if payload.Username == "" {
+		payload.Username = c.FormValue("username")
 	}
-	if email != "" {
-		u.Email = strings.TrimSpace(email)
+	if payload.Email == "" {
+		payload.Email = c.FormValue("email")
 	}
-	if newPass != "" {
-		h, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if payload.Password == "" {
+		payload.Password = c.FormValue("password")
+	}
+
+	// apply changes
+	if strings.TrimSpace(payload.Username) != "" {
+		u.Username = strings.TrimSpace(payload.Username)
+	}
+	if strings.TrimSpace(payload.Email) != "" {
+		u.Email = strings.TrimSpace(payload.Email)
+	}
+	if payload.Password != "" {
+		h, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghash password"})
 		}
 		u.PasswordHash = string(h)
 	}
 
-	// upload avatar optional (form key "avatar")
-	if _, ferr := c.FormFile("avatar"); ferr == nil {
-		if path, err := utils.SaveFile(c, "avatar", "avatars"); err == nil {
+	// 3) Handle upload avatar (multipart/form-data)
+	// Note: FormFile hanya bekerja jika Content-Type adalah multipart/form-data
+	if _, ferr := c.FormFile("profile_picture"); ferr == nil {
+		if path, err := utils.SaveFile(c, "profile_picture", "cover"); err == nil {
 			u.ProfilePicture = &path
 		}
 	}
@@ -131,6 +148,65 @@ func ListUsers(c *fiber.Ctx) error {
 		users[i].PasswordHash = ""
 	}
 	return c.JSON(fiber.Map{"page": page, "limit": limit, "data": users})
+}
+
+func ChangePassword(c *fiber.Ctx) error {
+	uid, err := getUserIDFromLocals2(c)
+	if err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+	}
+
+	// support JSON atau form-data
+	var payload struct {
+		OldPassword string `json:"old_password" form:"old_password"`
+		NewPassword string `json:"new_password" form:"new_password"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+	}
+
+	payload.OldPassword = strings.TrimSpace(payload.OldPassword)
+	payload.NewPassword = strings.TrimSpace(payload.NewPassword)
+
+	if payload.OldPassword == "" || payload.NewPassword == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "old_password dan new_password wajib diisi"})
+	}
+	if payload.OldPassword == payload.NewPassword {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru harus berbeda dari password lama"})
+	}
+	// opsional: validasi panjang minimal password
+	if len(payload.NewPassword) < 8 {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru minimal 8 karakter"})
+	}
+
+	// ambil user
+	var u models.User
+	if err := database.DB.First(&u, uid).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "user tidak ditemukan"})
+		}
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+	}
+
+	// verifikasi old password
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(payload.OldPassword)); err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "password lama salah"})
+	}
+
+	// hash password baru dan simpan
+	hashed, err := bcrypt.GenerateFromPassword([]byte(payload.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memproses password baru"})
+	}
+
+	u.PasswordHash = string(hashed)
+	u.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(&u).Error; err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan password baru"})
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "password berhasil diubah"})
 }
 
 // DeleteUser: DELETE /api/v1/admin/users/:id (admin only)
