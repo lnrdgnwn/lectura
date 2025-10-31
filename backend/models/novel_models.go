@@ -13,6 +13,7 @@ type Novel struct {
 	CoverImage *string   `gorm:"size:512" json:"cover_url,omitempty"`
 	Status     string    `gorm:"size:20;default:'DRAFT'" json:"status"`
 	Genres     []Genre   `gorm:"many2many:novel_genres;constraint:OnDelete:CASCADE;" json:"genres,omitempty"`
+	Tags       []Tag     `gorm:"many2many:novel_tags;constraint:OnDelete:CASCADE;" json:"tags,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
