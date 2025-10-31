@@ -12,6 +12,37 @@ import (
 	"gorm.io/gorm"
 )
 
+func GetAllChapters(c *fiber.Ctx) error {
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	var chapters []models.Chapter
+	if err := database.DB.Order("novel_id ASC, order_no ASC").
+		Limit(limit).Offset(offset).
+		Find(&chapters).Error; err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapters", "error": err.Error()})
+	}
+
+	// optional: total count untuk frontend pagination
+	var total int64
+	database.DB.Model(&models.Chapter{}).Count(&total)
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"page":     page,
+		"limit":    limit,
+		"total":    total,
+		"chapters": chapters,
+	})
+}
+
+
 // AddChapter - POST /chapters
 // Body JSON: { "novel_id": uint, "title": "string", "content":"string" }
 func AddChapter(c *fiber.Ctx) error {

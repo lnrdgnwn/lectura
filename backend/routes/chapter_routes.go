@@ -9,11 +9,11 @@ import (
 
 func chapterRoutes(api fiber.Router) {
 	// public
-	api.Get("/novels/:novel_id/chapters", controllers.ListChapters)
+	api.Get("/chapters", middlewares.AdminMiddleware(),controllers.GetAllChapters)
 	api.Get("/chapters/:id", controllers.GetChapter)
 
 	// protected (create / modify / delete) - require auth + admin
-	api.Post("/chapters", controllers.AddChapter, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Put("/chapters/:id", controllers.UpdateChapter, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Delete("/chapters/:id", controllers.DeleteChapter, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
+	api.Post("/chapters", middlewares.AuthMiddleware(), controllers.AddChapter)
+	api.Put("/chapters/:id", middlewares.AuthMiddleware(), controllers.UpdateChapter)
+	api.Delete("/chapters/:id", middlewares.AuthMiddleware(), controllers.DeleteChapter)
 }

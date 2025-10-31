@@ -15,10 +15,7 @@ func novelRoutes(api fiber.Router) {
 	api.Get("/novels/:novel_id/chapters", controllers.ListChapters)
 
 	// protected (create / modify / delete) - require auth + admin
-	api.Post("/novels", controllers.PostNovel, middlewares.AdminMiddleware(), middlewares.AuthMiddleware())
-	api.Put("/novels/:id", controllers.UpdateNovel, middlewares.AdminMiddleware(), middlewares.AuthMiddleware())
-	api.Delete("/novels/:id", controllers.DeleteNovel, middlewares.AdminMiddleware(), middlewares.AuthMiddleware())
-
-	// chapters - protected for creation
-	api.Post("/chapters", controllers.AddChapter, middlewares.AdminMiddleware(), middlewares.AuthMiddleware())
+	api.Post("/novels", middlewares.AuthMiddleware(), controllers.PostNovel)
+	api.Put("/novels/:id", middlewares.AuthMiddleware(), controllers.UpdateNovel)
+	api.Delete("/novels/:id", middlewares.AuthMiddleware(), controllers.DeleteNovel)
 }

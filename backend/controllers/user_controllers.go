@@ -128,7 +128,7 @@ func ListUsers(c *fiber.Ctx) error {
 	}
 	if rs, ok := role.(string); ok {
 		if strings.ToLower(rs) != "admin" {
-			return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden"})
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden - admin only"})
 		}
 	}
 
@@ -218,7 +218,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	}
 	if rs, ok := role.(string); ok {
 		if strings.ToLower(rs) != "admin" {
-			return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden"})
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden - admin only"})
 		}
 	}
 
