@@ -13,7 +13,7 @@ func genreRoutes(api fiber.Router) {
 	api.Get("/genres/:id", controllers.GetGenre)
 
 	// protected: create/update/delete require auth + admin
-	api.Post("/genres", controllers.CreateGenre, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Put("/genres/:id", controllers.UpdateGenre, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Delete("/genres/:id", controllers.DeleteGenre, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
+	api.Post("/genres", middlewares.AuthMiddleware(), controllers.CreateGenre)
+	api.Put("/genres/:id", middlewares.AuthMiddleware(), controllers.UpdateGenre)
+	api.Delete("/genres/:id", middlewares.AuthMiddleware(), controllers.DeleteGenre)
 }
