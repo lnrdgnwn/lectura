@@ -13,11 +13,7 @@ func tagsRoutes(api fiber.Router) {
 	api.Get("/tags/:id", controllers.GetTag)
 
 	// admin-only tag management
-	api.Post("/tags", controllers.CreateTag, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Put("/tags/:id", controllers.UpdateTag, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Delete("/tags/:id", controllers.DeleteTag, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-
-	// manage tag associations on novels (require auth; you can change to Admin only if ingin)
-	api.Post("/novels/:id/tags", controllers.AddTagsToNovel, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
-	api.Delete("/novels/:id/tags", controllers.RemoveTagsFromNovel, middlewares.AuthMiddleware(), middlewares.AdminMiddleware())
+	api.Post("/tags", middlewares.AuthMiddleware(), controllers.CreateTag)
+	api.Put("/tags/:id", middlewares.AuthMiddleware(), controllers.UpdateTag)
+	api.Delete("/tags/:id", middlewares.AuthMiddleware(), controllers.DeleteTag)
 }
