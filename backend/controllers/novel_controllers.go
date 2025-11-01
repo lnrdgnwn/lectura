@@ -122,15 +122,6 @@ func GetNovel(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{"data": novel})
 }
 
-// PostNovel supports both raw JSON and multipart/form-data (with optional file "cover")
-//
-// For JSON body: same payload as documented (genre_ids as array, tag_ids as array).
-// For form-data:
-//  - text fields: title, slug, synopsis, cover_url (optional), status
-//  - file field: cover (file) -> will be saved via utils.SaveFile(c,"cover","covers") and cover url set
-//  - arrays can be provided as comma-separated strings or JSON array strings in fields:
-//      genre_ids  or genre_ids[]  (we accept both)  -> max 1 allowed
-//      tag_ids    or tag_ids[]    -> multiple allowed
 func PostNovel(c *fiber.Ctx) error {
 	uid, err := getUserIDFromLocals(c)
 	if err != nil {
@@ -162,7 +153,7 @@ func PostNovel(c *fiber.Ctx) error {
 		if s := c.FormValue("synopsis"); s != "" {
 			payload.Synopsis = &s
 		}
-		if cv := c.FormValue("cover_url"); cv != "" {
+		if cv := c.FormValue("cover_image"); cv != "" {
 			payload.CoverURL = &cv
 		}
 		if st := c.FormValue("status"); st != "" {
@@ -184,8 +175,8 @@ func PostNovel(c *fiber.Ctx) error {
 		}
 
 		// handle cover file upload (if provided) and override cover_url
-		if _, ferr := c.FormFile("cover"); ferr == nil {
-			if path, err := utils.SaveFile(c, "cover", "cover"); err == nil {
+		if _, ferr := c.FormFile("cover_image"); ferr == nil {
+			if path, err := utils.SaveFile(c, "cover_image", "cover"); err == nil {
 				payload.CoverURL = &path
 			} else {
 				// non-fatal: return error so client knows upload failed
@@ -274,12 +265,12 @@ func UpdateNovel(c *fiber.Ctx) error {
 
 	// payload with pointer slices to detect presence
 	var payload struct {
-		Title    *string  `json:"title"`
-		Synopsis *string  `json:"synopsis"`
-		CoverURL *string  `json:"cover_url"`
-		Status   *string  `json:"status"`
-		GenreIDs *[]uint  `json:"genre_ids"`
-		TagIDs   *[]uint  `json:"tag_ids"`
+		Title      *string `json:"title"`
+		Synopsis   *string `json:"synopsis"`
+		CoverImage *string `json:"cover_image"`
+		Status     *string `json:"status"`
+		GenreIDs   *[]uint `json:"genre_ids"`
+		TagIDs     *[]uint `json:"tag_ids"`
 	}
 
 	ct := c.Get("Content-Type")
@@ -295,8 +286,8 @@ func UpdateNovel(c *fiber.Ctx) error {
 		if v := c.FormValue("synopsis"); v != "" {
 			payload.Synopsis = &v
 		}
-		if v := c.FormValue("cover_url"); v != "" {
-			payload.CoverURL = &v
+		if v := c.FormValue("cover_image"); v != "" {
+			payload.CoverImage = &v
 		}
 		if v := c.FormValue("status"); v != "" {
 			payload.Status = &v
@@ -317,8 +308,8 @@ func UpdateNovel(c *fiber.Ctx) error {
 
 		// handle cover file upload (if provided) and override cover_url
 		if _, ferr := c.FormFile("cover_image"); ferr == nil {
-			if path, err := utils.SaveFile(c, "cover", "cover"); err == nil {
-				payload.CoverURL = &path
+			if path, err := utils.SaveFile(c, "cover_image", "cover"); err == nil {
+				payload.CoverImage = &path
 			} else {
 				return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "gagal menyimpan cover", "error": err.Error()})
 			}
@@ -336,8 +327,8 @@ func UpdateNovel(c *fiber.Ctx) error {
 	if payload.Synopsis != nil {
 		novel.Synopsis = payload.Synopsis
 	}
-	if payload.CoverURL != nil {
-		novel.CoverImage = payload.CoverURL
+	if payload.CoverImage != nil {
+		novel.CoverImage = payload.CoverImage
 	}
 	if payload.Status != nil && *payload.Status != "" {
 		novel.Status = *payload.Status
