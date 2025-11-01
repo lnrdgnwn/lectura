@@ -105,7 +105,7 @@ func UpdateProfile(c *fiber.Ctx) error {
 	// 3) Handle upload avatar (multipart/form-data)
 	// Note: FormFile hanya bekerja jika Content-Type adalah multipart/form-data
 	if _, ferr := c.FormFile("profile_picture"); ferr == nil {
-		if path, err := utils.SaveFile(c, "profile_picture", "cover"); err == nil {
+		if path, err := utils.SaveFile(c, "profile_picture", "profile_picture"); err == nil {
 			u.ProfilePicture = &path
 		}
 	}
