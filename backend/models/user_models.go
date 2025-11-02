@@ -13,5 +13,5 @@ type User struct {
 	ProfilePicture *string        `gorm:"size:512" json:"profile_picture,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
-	RefreshToken  []RefreshTokens `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	RefreshToken  []RefreshToken `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 }

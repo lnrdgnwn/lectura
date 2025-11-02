@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-type RefreshTokens struct {
+type RefreshToken struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	RefreshToken string    `gorm:"size:512;uniqueIndex;not null" json:"refresh_token"`
 	ParentToken  string    `gorm:"size:512" json:"parent_token"`
