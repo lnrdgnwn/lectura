@@ -3,8 +3,6 @@ package controllers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -20,37 +18,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 )
-
-// ----------------- helpers -----------------
-
-// generateRandomHex menghasilkan hex string acak (n bytes)
-func generateRandomHex(n int) (string, error) {
-	b := make([]byte, n)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// signAccessToken menandatangani JWT access token (HMAC)
-func signAccessToken(userID uint, role string, ttlMinutes int) (string, time.Time, error) {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		return "", time.Time{}, errors.New("JWT_SECRET not configured")
-	}
-	now := time.Now()
-	exp := now.Add(time.Duration(ttlMinutes) * time.Minute)
-	claims := jwt.MapClaims{
-		"sub":  userID,
-		"role": role,
-		"iat":  now.Unix(),
-		"exp":  exp.Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte(secret))
-	return signed, exp, err
-}
 
 func getIPPtr(c *fiber.Ctx) *string {
 	ip := c.IP()
@@ -68,34 +35,36 @@ func getUserAgentPtr(c *fiber.Ctx) *string {
 	return &ua
 }
 
-// ----------------- handlers -----------------
-
-// Register: POST /api/v1/auth/register
 func Register(c *fiber.Ctx) error {
 	var body struct {
 		Username string `json:"username"`
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
+
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Field tidak valid"})
 	}
 	body.Username = strings.TrimSpace(body.Username)
 	body.Email = strings.TrimSpace(body.Email)
 	if body.Username == "" || body.Email == "" || body.Password == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "username, email, password wajib diisi"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Username, Email, Password wajib diisi"})
 	}
 
-	// cek duplicate
+	// Cek duplicate username/email
 	var cnt int64
-	database.DB.Model(&models.User{}).Where("username = ? OR email = ?", body.Username, body.Email).Count(&cnt)
+	if err := database.DB.Model(&models.User{}).
+		Where("username = ? OR email = ?", body.Username, body.Email).
+		Count(&cnt).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memeriksa duplikasi"})
+	}
 	if cnt > 0 {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": "username atau email sudah terpakai"})
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": "Username atau Email sudah terpakai"})
 	}
 
 	pwHash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memproses password"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal memproses password"})
 	}
 
 	u := models.User{
@@ -106,406 +75,243 @@ func Register(c *fiber.Ctx) error {
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-
 	if err := database.DB.Create(&u).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat user", "error": err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal membuat user", "error": err.Error()})
 	}
 
 	u.PasswordHash = ""
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "user terdaftar", "user": u})
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "User berhasil terdaftar",
+		"user":    u,
+	})
 }
 
-// Login: POST /api/v1/auth/login
-// Returns access_token + refresh_token (and expiry). Uses Redis if available, otherwise DB.
 func Login(c *fiber.Ctx) error {
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Field tidak valid"})
 	}
 	body.Email = strings.TrimSpace(body.Email)
 	if body.Email == "" || body.Password == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "email dan password wajib diisi"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Email dan password wajib diisi"})
 	}
 
+	// Cari user
 	var u models.User
 	if err := database.DB.Where("email = ?", body.Email).First(&u).Error; err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "kredensial salah"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Kredensial salah"})
 	}
 
+	// Verifikasi password
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)); err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "kredensial salah"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Kredensial salah"})
 	}
 
-	// buat access token
-	accessTTL := 15
-	if v := os.Getenv("ACCESS_TTL_MIN"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			accessTTL = n
-		}
-	}
-	accessToken, exp, err := signAccessToken(u.ID, u.Role, accessTTL)
+	accessJWT, err := utils.GenerateAccessToken(c, int(u.ID), u.Username, u.Role)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat access token"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal membuat access token"})
 	}
 
-	// Buat refresh token menggunakan utils.GenerateRefreshToken (mirip contoh)
-	signedRefresh, err := utils.GenerateRefreshToken(c, int(u.ID), u.Username, u.Role)
+	refreshJWT, err := utils.GenerateRefreshToken(c, int(u.ID), u.Username, u.Role)
 	if err != nil {
-		// fallback: jika utils tidak ada atau error, generate random hex (basic)
-		raw, rerr := generateRandomHex(32)
-		if rerr != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat refresh token"})
-		}
-		signedRefresh = raw
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal membuat refresh token"})
 	}
 
-	// collect ip & ua pointers
 	ipPtr := getIPPtr(c)
 	uaPtr := getUserAgentPtr(c)
 
-	// SINGLE-ACTIVE: simpan refresh token, pastikan token lama tidak aktif
+	rt := models.RefreshToken{
+		RefreshToken: refreshJWT,
+		ParentToken:  "",
+		UserID:       int(u.ID),
+		Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
+		IPAddress:    ipPtr,
+		UserAgent:    uaPtr,
+	}
+
 	if database.Rdb != nil {
-		rt := models.RefreshTokens{
-			RefreshToken: signedRefresh,
-			ParentToken:  "",
-			UserID:       int(u.ID),
-			Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
-			IPAddress:    ipPtr,
-			UserAgent:    uaPtr,
-		}
+		// pastikan single-active: buang key lama dulu
+		_ = database.Rdb.Del(context.Background(), fmt.Sprintf("refresh:%d", rt.UserID)).Err()
 		if err := utils.SaveRefreshToken(c, rt); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan refresh token (redis)", "error": err.Error()})
 		}
 	} else {
-		// fallback DB: hapus token lama (single active) lalu simpan baru
-		_ = database.DB.Where("user_id = ?", int(u.ID)).Delete(&models.RefreshTokens{}).Error
-		rt := models.RefreshTokens{
-			RefreshToken: signedRefresh,
-			ParentToken:  "",
-			UserID:       int(u.ID),
-			Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
-			IPAddress:    ipPtr,
-			UserAgent:    uaPtr,
-		}
+		_ = database.DB.Where("user_id = ?", rt.UserID).Delete(&models.RefreshToken{}).Error
 		if err := database.DB.Create(&rt).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan refresh token (db)", "error": err.Error()})
 		}
 	}
 
 	return c.JSON(fiber.Map{
-		"access_token":       accessToken,
-		"access_expires_at":  exp.Format(time.RFC3339),
-		"refresh_token":      signedRefresh,
+		"message":            "Login sukses",
+		"access_token":       accessJWT,
+		"access_expires_at":  time.Now().Add(15 * time.Minute).Format(time.RFC3339),
+		"refresh_token":      refreshJWT,
 		"refresh_expires_at": time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339),
 	})
 }
 
-// RefreshToken: POST /api/v1/auth/refresh
-// Flow mirip contoh: decrypt cookie/body, validasi via Redis (preferred) or DB fallback, rotate token.
 func RefreshToken(c *fiber.Ctx) error {
-	rdbCtx := context.Background()
+    rdbCtx := context.Background()
 
-	// ambil encrypted token dari cookie "refresh_token" atau body JSON { "refresh_token": "..." }
-	enc := c.Cookies("refresh_token", "")
-	if enc == "" {
-		var body struct {
-			RefreshToken string `json:"refresh_token"`
-		}
-		_ = c.BodyParser(&body)
-		enc = strings.TrimSpace(body.RefreshToken)
-	}
-	if enc == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token missing"})
-	}
+    encRefresh := c.Cookies("refresh_token")
+    if encRefresh == "" {
+        return c.Status(401).JSON(fiber.Map{"message": "refresh token missing"})
+    }
 
-	// Decrypt untuk mendapat refreshStr (JWT/genereted string)
-	refreshStr, err := utils.Decrypt(enc)
-	if err != nil {
-		// Jika utils.Decrypt gagal, mungkin enc adalah token plain (fallback) => gunakan enc as-is
-		refreshStr = enc
-	}
+    // decrypt cookie -> plaintext JWT lama yang dikirim klien
+    refreshStr, err := utils.Decrypt(encRefresh)
+    if err != nil {
+        return c.Status(401).JSON(fiber.Map{"message": "invalid refresh token1"})
+    }
 
-	// Parse JWT (jika format JWT); jika bukan JWT, parse akan error and we treat as plain token for DB lookup
-	token, err := jwt.Parse(refreshStr, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrTokenUnverifiable
-		}
-		secret := os.Getenv("JWT_SECRET")
-		return []byte(secret), nil
-	})
+    // parse JWT untuk ambil claims (id, name, role, exp)
+    token, err := jwt.Parse(refreshStr, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        return c.Status(401).JSON(fiber.Map{"message": "invalid refresh token2"})
+    }
 
-	var userIDInt int
-	var claims jwt.MapClaims
-	if err == nil && token != nil && token.Valid {
-		claims, _ = token.Claims.(jwt.MapClaims)
-		if s, ok := claims["id"]; ok {
-			switch t := s.(type) {
-			case float64:
-				userIDInt = int(t)
-			case int:
-				userIDInt = t
-			case string:
-				if n, e := strconv.Atoi(t); e == nil {
-					userIDInt = n
-				}
-			}
-		} else if s, ok := claims["sub"]; ok {
-			switch t := s.(type) {
-			case float64:
-				userIDInt = int(t)
-			case int:
-				userIDInt = t
-			case string:
-				if n, e := strconv.Atoi(t); e == nil {
-					userIDInt = n
-				}
-			}
-		}
-	} else {
-		userIDInt = 0
-	}
+    claims := token.Claims.(jwt.MapClaims)
+    userID := int(claims["id"].(float64))
 
-	// prepare ip & ua pointers for rotation storage
-	ipPtr := getIPPtr(c)
-	uaPtr := getUserAgentPtr(c)
+    // ambil state aktif dari Redis
+    userKey := fmt.Sprintf("refresh:%d", userID)
+    hash, err := database.Rdb.HGetAll(rdbCtx, userKey).Result()
+    if err != nil || len(hash) == 0 {
+        return c.Status(401).JSON(fiber.Map{"message": "refresh token not found"})
+    }
 
-	// Try Redis flow if available
-	if database.Rdb != nil {
-		if userIDInt == 0 {
-			// fallback to DB if token isn't JWT with user id
-			goto DB_FALLBACK
-		}
+    // decrypt nilai yg tersimpan di Redis (token aktif resmi)
+    hashRefreshtoken := hash["refresh_token"]
+    refreshDecrypted, err := utils.Decrypt(hashRefreshtoken)
+    if err != nil {
+        return c.Status(401).JSON(fiber.Map{"message": "invalid refresh token3"})
+    }
 
-		userKey := fmt.Sprintf("refresh:%d", userIDInt)
-		hash, err := database.Rdb.HGetAll(rdbCtx, userKey).Result()
-		if err != nil || len(hash) == 0 {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token not found"})
-		}
+    hashParentToken := hash["parent_token"]
+    parentDecrypted := ""
+    if hashParentToken != "" {
+        parentDecrypted, err = utils.Decrypt(hashParentToken)
+        if err != nil {
+            return c.Status(401).JSON(fiber.Map{"message": "invalid refresh token4"})
+        }
+    }
 
-		storedEnc := hash["refresh_token"]
-		storedRefresh, derr := utils.Decrypt(storedEnc)
-		if derr != nil {
-			// data korup -> delete key
-			_ = database.Rdb.Del(rdbCtx, userKey)
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid stored refresh token"})
-		}
+    expInt, _ := strconv.ParseInt(hash["exp"], 10, 64)
 
-		parentEnc := hash["parent_token"]
-		parentDecrypted := ""
-		if parentEnc != "" {
-			if pd, perr := utils.Decrypt(parentEnc); perr == nil {
-				parentDecrypted = pd
-			}
-		}
+    // deteksi reuse / mismatch
+    if refreshStr == parentDecrypted && refreshStr != refreshDecrypted {
+        database.Rdb.Del(rdbCtx, userKey)
+        return c.Status(401).JSON(fiber.Map{"message": "refresh token mismatch, please login again"})
+    }
 
-		expInt, _ := strconv.ParseInt(hash["exp"], 10, 64)
+    // expired?
+    if time.Now().Unix() > expInt {
+        database.Rdb.Del(rdbCtx, userKey)
+        return c.Status(401).JSON(fiber.Map{"message": "refresh token expired"})
+    }
 
-		// reuse detection
-		if refreshStr == parentDecrypted && refreshStr != storedRefresh {
-			_ = database.Rdb.Del(rdbCtx, userKey)
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token mismatch, please login again"})
-		}
+    // generate access baru
+    if _, err := utils.GenerateAccessToken(c, userID, claims["name"].(string), claims["role"].(string)); err != nil {
+        return c.Status(500).JSON(fiber.Map{"message": "failed generate access token"})
+    }
 
-		// expired?
-		if time.Now().Unix() > expInt {
-			_ = database.Rdb.Del(rdbCtx, userKey)
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token expired"})
-		}
+    // generate refresh baru (JWT -> JWT)
+    signedRefresh, err := utils.GenerateRefreshToken(c, userID, claims["name"].(string), claims["role"].(string))
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{"message": "Gagal buat refresh token"})
+    }
 
-		// success: generate new access token + rotate refresh
-		name := ""
-		role := ""
-		if claims != nil {
-			if v, ok := claims["name"].(string); ok {
-				name = v
-			}
-			if v, ok := claims["role"].(string); ok {
-				role = v
-			}
-		}
+    ipPtr := getIPPtr(c)
+    uaPtr := getUserAgentPtr(c)
 
-		accessTTL := 15
-		if v := os.Getenv("ACCESS_TTL_MIN"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				accessTTL = n
-			}
-		}
-		accessToken, exp, err := signAccessToken(uint(userIDInt), role, accessTTL)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed generate access token"})
-		}
+    // PENTING: parent ambil dari token AKTIF DI REDIS (refreshDecrypted)
+    newState := models.RefreshToken{
+        RefreshToken: signedRefresh,
+        ParentToken:  refreshDecrypted,
+        UserID:       userID,
+        Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
+        IPAddress:    ipPtr,
+        UserAgent:    uaPtr,
+    }
 
-		// generate fresh refresh token via utils
-		newSignedRefresh, err := utils.GenerateRefreshToken(c, userIDInt, name, role)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed generate refresh token"})
-		}
+    // simpan ke Redis
+    if err := utils.SaveRefreshToken(c, newState); err != nil {
+        return c.Status(500).JSON(fiber.Map{"message": "Redis error"})
+    }
 
-		newRT := models.RefreshTokens{
-			RefreshToken: newSignedRefresh,
-			ParentToken:  refreshStr,
-			UserID:       userIDInt,
-			Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
-			IPAddress:    ipPtr,
-			UserAgent:    uaPtr,
-		}
-		if err := utils.SaveRefreshToken(c, newRT); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed save refresh token"})
-		}
+    // --- DB mirror (hapus jika SaveRefreshToken-mu sudah melakukan ini) ---
+    if database.DB != nil {
+        // single-active di DB
+        _ = database.DB.Where("user_id = ?", newState.UserID).Delete(&models.RefreshToken{}).Error
+        if err := database.DB.Create(&newState).Error; err != nil {
+            return c.Status(500).JSON(fiber.Map{"message": "DB mirror error", "error": err.Error()})
+        }
+    }
+    // ---------------------------------------------------------------------
 
-		return c.JSON(fiber.Map{
-			"access_token":       accessToken,
-			"access_expires_at":  exp.Format(time.RFC3339),
-			"refresh_token":      newSignedRefresh,
-			"refresh_expires_at": time.Unix(newRT.Exp, 0).Format(time.RFC3339),
-		})
-	}
-
-DB_FALLBACK:
-	// fallback DB-based flow: lookup refresh token record by refreshStr
-	var old models.RefreshTokens
-	if err := database.DB.Where("refresh_token = ?", refreshStr).First(&old).Error; err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token not found"})
-	}
-
-	// expiry check
-	if time.Now().Unix() > old.Exp {
-		_ = database.DB.Where("refresh_token = ?", refreshStr).Delete(&models.RefreshTokens{})
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token expired"})
-	}
-
-	// reuse detection
-	if old.ParentToken != "" && old.ParentToken == refreshStr && old.RefreshToken != refreshStr {
-		_ = database.DB.Where("user_id = ?", old.UserID).Delete(&models.RefreshTokens{})
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "refresh token reuse detected"})
-	}
-
-	// load user
-	var u models.User
-	if err := database.DB.First(&u, old.UserID).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "user not found"})
-	}
-
-	// generate access token
-	accessTTL := 15
-	if v := os.Getenv("ACCESS_TTL_MIN"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			accessTTL = n
-		}
-	}
-	accessToken, exp, err := signAccessToken(uint(u.ID), u.Role, accessTTL)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed generate access token"})
-	}
-
-	// rotate refresh token: create new record & delete old
-	newRaw, err := generateRandomHex(32)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed create new refresh token"})
-	}
-	newRT := models.RefreshTokens{
-		RefreshToken: newRaw,
-		ParentToken:  old.RefreshToken,
-		UserID:       old.UserID,
-		Exp:          time.Now().Add(7 * 24 * time.Hour).Unix(),
-		IPAddress:    ipPtr,
-		UserAgent:    uaPtr,
-	}
-	tx := database.DB.Begin()
-	if err := tx.Create(&newRT).Error; err != nil {
-		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed save new refresh token"})
-	}
-	if err := tx.Where("refresh_token = ?", old.RefreshToken).Delete(&models.RefreshTokens{}).Error; err != nil {
-		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed delete old refresh token"})
-	}
-	if err := tx.Commit().Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "failed commit transaction"})
-	}
-
-	return c.JSON(fiber.Map{
-		"access_token":       accessToken,
-		"access_expires_at":  exp.Format(time.RFC3339),
-		"refresh_token":      newRaw,
-		"refresh_expires_at": time.Unix(newRT.Exp, 0).Format(time.RFC3339),
-	})
+    return c.JSON(fiber.Map{
+        "message": "refresh success",
+    })
 }
 
-// Logout: POST /api/v1/auth/logout
-// expects body { "refresh_token": "..." } or cookie "refresh_token"
-// removes from Redis or DB
 func Logout(c *fiber.Ctx) error {
-	rt := c.Cookies("refresh_token", "")
-	if rt == "" {
+	// 1) Ambil refresh token dari cookie atau body
+	rtEnc := c.Cookies("refresh_token", "")
+	if rtEnc == "" {
 		var body struct {
 			RefreshToken string `json:"refresh_token"`
 		}
 		_ = c.BodyParser(&body)
-		rt = strings.TrimSpace(body.RefreshToken)
+		rtEnc = strings.TrimSpace(body.RefreshToken)
 	}
-	if rt == "" {
+	if rtEnc == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "refresh_token wajib"})
 	}
 
-	// try decrypt (if token was stored encrypted in cookie)
-	dec, derr := utils.Decrypt(rt)
-	if derr == nil {
-		rt = dec
+	// 2) Jika datang dari cookie, itu terenkripsi (utils.SetTokenCookie) → decrypt ke plaintext JWT
+	rtPlain, derr := utils.Decrypt(rtEnc)
+	if derr != nil {
+		// Bisa jadi user memang mengirim plaintext JWT di body, jadi gunakan apa adanya
+		rtPlain = rtEnc
 	}
 
-	// If Redis available, try delete by user key (we need user id from token)
-	if database.Rdb != nil {
-		// try parse jwt to get user id (best-effort)
-		if token, err := jwt.Parse(rt, func(t *jwt.Token) (interface{}, error) {
-			secret := os.Getenv("JWT_SECRET")
-			return []byte(secret), nil
-		}); err == nil && token != nil {
-			if claims, ok := token.Claims.(jwt.MapClaims); ok {
-				var userIDInt int
-				if s, ok := claims["id"]; ok {
-					switch t := s.(type) {
-					case float64:
-						userIDInt = int(t)
-					case int:
-						userIDInt = t
-					case string:
-						if n, e := strconv.Atoi(t); e == nil {
-							userIDInt = n
-						}
-					}
-				} else if s, ok := claims["sub"]; ok {
-					switch t := s.(type) {
-					case float64:
-						userIDInt = int(t)
-					case int:
-						userIDInt = t
-					case string:
-						if n, e := strconv.Atoi(t); e == nil {
-							userIDInt = n
-						}
-					}
-				}
-				if userIDInt != 0 {
-					userKey := fmt.Sprintf("refresh:%d", userIDInt)
-					_ = database.Rdb.Del(context.Background(), userKey)
-					// Also delete any fallback DB record if exists
-					_ = database.DB.Where("refresh_token = ?", rt).Delete(&models.RefreshTokens{}).Error
-					return c.JSON(fiber.Map{"message": "logout sukses"})
+	// 3) Parse JWT untuk ambil userID (claim "id"). Jika gagal, kita tetap akan mencoba hapus via DB.
+	var userIDInt int
+	if token, err := jwt.Parse(rtPlain, func(t *jwt.Token) (interface{}, error) {
+		// Pastikan algoritma HMAC
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("invalid signing method")
+		}
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	}); err == nil && token != nil && token.Valid {
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			switch s := claims["id"].(type) {
+			case float64:
+				userIDInt = int(s)
+			case int:
+				userIDInt = s
+			case string:
+				if n, e := strconv.Atoi(s); e == nil {
+					userIDInt = n
 				}
 			}
 		}
-		// If we couldn't parse token to get user id, fallback to DB deletion (best-effort)
-		_ = database.DB.Where("refresh_token = ?", rt).Delete(&models.RefreshTokens{}).Error
-		return c.JSON(fiber.Map{"message": "logout sukses"})
 	}
 
-	// fallback DB: delete by refresh token value
-	if err := database.DB.Where("refresh_token = ?", rt).Delete(&models.RefreshTokens{}).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus token", "error": err.Error()})
+	// 4) Invalidate di Redis (hapus key refresh:<userID>) bila userID diketahui & Redis ada
+	if database.Rdb != nil && userIDInt != 0 {
+		userKey := fmt.Sprintf("refresh:%d", userIDInt)
+		_ = database.Rdb.Del(context.Background(), userKey)
 	}
+
+	// 5) Fallback/Best-effort: hapus baris di DB berdasarkan nilai refresh_token (plaintext JWT)
+	_ = database.DB.Where("refresh_token = ?", rtPlain).Delete(&models.RefreshToken{}).Error
+
 	return c.JSON(fiber.Map{"message": "logout sukses"})
 }
