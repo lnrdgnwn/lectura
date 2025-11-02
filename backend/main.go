@@ -13,6 +13,7 @@ func main() {
 	config.ENVLoad()
 	database.DBLoad()
 	database.DBMigrate()
+	database.Redis()
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:5173/",
