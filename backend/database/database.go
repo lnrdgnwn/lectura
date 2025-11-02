@@ -52,7 +52,7 @@ func Redis() {
 }
 
 func DBMigrate() {
-	if err := DB.Debug().AutoMigrate(&models.Bookmark{}, models.Chapter{}, models.Genre{}, models.Novel{}, models.User{}, models.Tag{},models.RefreshTokens{}); err != nil {
+	if err := DB.Debug().AutoMigrate(&models.Bookmark{}, models.Chapter{}, models.Genre{}, models.Novel{}, models.User{}, models.Tag{},models.RefreshToken{}); err != nil {
 		panic("Failed to migrate database")
 	}
 	fmt.Println("Database migration completed")
