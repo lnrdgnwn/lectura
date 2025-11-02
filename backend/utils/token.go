@@ -6,7 +6,6 @@ import (
 	"final_project/database"
 	"final_project/models"
 	"time"
-	"strconv"
 
 	"crypto/aes"
 	"crypto/cipher"
@@ -129,54 +128,43 @@ func Decrypt(encrypted string) (string, error) {
 	return string(plaintext), nil
 }
 
-func SaveRefreshToken(ctx *fiber.Ctx, token models.RefreshTokens) error {
-    rdbCtx := context.Background()
+func SaveRefreshToken(ctx *fiber.Ctx, token models.RefreshToken) error {
+	rdbCtx := context.Background()
 
-    key := fmt.Sprintf("refresh:%d", token.UserID)
+	key := fmt.Sprintf("refresh:%d", token.UserID)
 
-    encryptedToken, err := Encrypt(token.RefreshToken)
-    if err != nil {
-        return err
-    }
+	encryptedToken, err := Encrypt(token.RefreshToken)
+	if err != nil {
+		return err
+	}
 
-    encryptedParent := ""
-    if token.ParentToken != "" {
-        encryptedParent, err = Encrypt(token.ParentToken)
-        if err != nil {
-            return err
-        }
-    }
+	encryptedParent := ""
+	if token.ParentToken != "" {
+		encryptedParent, err = Encrypt(token.ParentToken)
+		if err != nil {
+			return err
+		}
+	}
 
-    ipStr := ""
-    uaStr := ""
-    if token.IPAddress != nil {
-        ipStr = *token.IPAddress
-    }
-    if token.UserAgent != nil {
-        uaStr = *token.UserAgent
-    }
+	fields := map[string]interface{}{
+		"refresh_token": encryptedToken,
+		"parent_token":  encryptedParent,
+		"exp":           token.Exp,
+	}
 
-    fields := map[string]interface{}{
-        "refresh_token": encryptedToken,
-        "parent_token":  encryptedParent,
-        "exp":           token.Exp,
-        "ip":            ipStr,
-        "ua":            uaStr,
-    }
+	if err := database.Rdb.HSet(rdbCtx, key, fields).Err(); err != nil {
+		return err
+	}
 
-    if err := database.Rdb.HSet(rdbCtx, key, fields).Err(); err != nil {
-        return err
-    }
+	ttl := time.Until(time.Unix(token.Exp, 0))
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	if err := database.Rdb.Expire(rdbCtx, key, ttl).Err(); err != nil {
+		return err
+	}
 
-    ttl := time.Until(time.Unix(token.Exp, 0))
-    if ttl <= 0 {
-        ttl = 7 * 24 * time.Hour
-    }
-    if err := database.Rdb.Expire(rdbCtx, key, ttl).Err(); err != nil {
-        return err
-    }
-
-    return nil
+	return nil
 }
 
 func SetTokenCookie(c *fiber.Ctx, token string, name string, expiration time.Duration) error {
@@ -195,53 +183,4 @@ func SetTokenCookie(c *fiber.Ctx, token string, name string, expiration time.Dur
 	})
 
 	return nil
-}
-
-func DeleteRefreshTokenByValue(c *fiber.Ctx, token string) error {
-	// coba Decrypt; jika gagal, gunakan token apa adanya (backward-compatible)
-	raw := token
-	if dec, err := Decrypt(token); err == nil {
-		raw = dec
-	}
-
-	// coba parse JWT untuk ekstrak user id
-	var userID int
-	if parsed, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	}); err == nil && parsed != nil && parsed.Valid {
-		if claims, ok := parsed.Claims.(jwt.MapClaims); ok {
-			if s, exists := claims["id"]; exists {
-				switch v := s.(type) {
-				case float64:
-					userID = int(v)
-				case int:
-					userID = v
-				case string:
-					if n, err := strconv.Atoi(v); err == nil {
-						userID = n
-					}
-				}
-			} else if s, exists := claims["sub"]; exists {
-				switch v := s.(type) {
-				case float64:
-					userID = int(v)
-				case int:
-					userID = v
-				case string:
-					if n, err := strconv.Atoi(v); err == nil {
-						userID = n
-					}
-				}
-			}
-		}
-	}
-
-	// Jika Redis tersedia dan kita dapatkan userID -> hapus key Redis
-	if database.Rdb != nil && userID != 0 {
-		key := fmt.Sprintf("refresh:%d", userID)
-		return database.Rdb.Del(context.Background(), key).Err()
-	}
-
-	// fallback DB: hapus record berdasarkan refresh_token (raw)
-	return database.DB.Where("refresh_token = ?", raw).Delete(&models.RefreshTokens{}).Error
 }
