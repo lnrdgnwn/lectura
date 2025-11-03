@@ -62,7 +62,7 @@ func AuthMiddleware() fiber.Handler {
 
 		role, _ := claims["role"].(string)
 
-		c.Locals("id", userID)    
+		c.Locals("user_id", userID)    
 		c.Locals("role", role)    
 
 		return c.Next()

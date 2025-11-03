@@ -110,7 +110,7 @@ func Login(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Kredensial salah"})
 	}
 
-	accessJWT, err := utils.GenerateAccessToken(c, int(u.ID), u.Username, u.Role)
+	_, err := utils.GenerateAccessToken(c, int(u.ID), u.Username, u.Role)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal membuat access token"})
 	}
@@ -147,10 +147,6 @@ func Login(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message":            "Login sukses",
-		"access_token":       accessJWT,
-		"access_expires_at":  time.Now().Add(15 * time.Minute).Format(time.RFC3339),
-		"refresh_token":      refreshJWT,
-		"refresh_expires_at": time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339),
 	})
 }
 
@@ -207,7 +203,7 @@ func RefreshToken(c *fiber.Ctx) error {
     // deteksi reuse / mismatch
     if refreshStr == parentDecrypted && refreshStr != refreshDecrypted {
         database.Rdb.Del(rdbCtx, userKey)
-        return c.Status(401).JSON(fiber.Map{"message": "refresh token mismatch, please login again"})
+        return c.Status(401).JSON(fiber.Map{"message": "refresh token reused, please login again"})
     }
 
     // expired?
@@ -261,7 +257,6 @@ func RefreshToken(c *fiber.Ctx) error {
 }
 
 func Logout(c *fiber.Ctx) error {
-	// 1) Ambil refresh token dari cookie atau body
 	rtEnc := c.Cookies("refresh_token", "")
 	if rtEnc == "" {
 		var body struct {
@@ -270,48 +265,65 @@ func Logout(c *fiber.Ctx) error {
 		_ = c.BodyParser(&body)
 		rtEnc = strings.TrimSpace(body.RefreshToken)
 	}
-	if rtEnc == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "refresh_token wajib"})
-	}
 
-	// 2) Jika datang dari cookie, itu terenkripsi (utils.SetTokenCookie) → decrypt ke plaintext JWT
-	rtPlain, derr := utils.Decrypt(rtEnc)
-	if derr != nil {
-		// Bisa jadi user memang mengirim plaintext JWT di body, jadi gunakan apa adanya
-		rtPlain = rtEnc
-	}
-
-	// 3) Parse JWT untuk ambil userID (claim "id"). Jika gagal, kita tetap akan mencoba hapus via DB.
-	var userIDInt int
-	if token, err := jwt.Parse(rtPlain, func(t *jwt.Token) (interface{}, error) {
-		// Pastikan algoritma HMAC
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("invalid signing method")
+	if rtEnc != "" {
+		rtPlain, derr := utils.Decrypt(rtEnc)
+		if derr != nil {
+			rtPlain = rtEnc
 		}
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	}); err == nil && token != nil && token.Valid {
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			switch s := claims["id"].(type) {
-			case float64:
-				userIDInt = int(s)
-			case int:
-				userIDInt = s
-			case string:
-				if n, e := strconv.Atoi(s); e == nil {
-					userIDInt = n
+
+		var userIDInt int
+		if token, err := jwt.Parse(rtPlain, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
+			return []byte(os.Getenv("JWT_SECRET")), nil
+		}); err == nil && token != nil {
+			if claims, ok := token.Claims.(jwt.MapClaims); ok {
+				switch s := claims["id"].(type) {
+				case float64:
+					userIDInt = int(s)
+				case int:
+					userIDInt = s
+				case string:
+					if n, e := strconv.Atoi(s); e == nil {
+						userIDInt = n
+					}
 				}
 			}
 		}
+
+		if database.Rdb != nil && userIDInt != 0 {
+			userKey := fmt.Sprintf("refresh:%d", userIDInt)
+			_ = database.Rdb.Del(context.Background(), userKey)
+		}
+
+		if database.DB != nil {
+			_ = database.DB.Where("refresh_token = ?", rtPlain).Delete(&models.RefreshToken{}).Error
+		}
 	}
 
-	// 4) Invalidate di Redis (hapus key refresh:<userID>) bila userID diketahui & Redis ada
-	if database.Rdb != nil && userIDInt != 0 {
-		userKey := fmt.Sprintf("refresh:%d", userIDInt)
-		_ = database.Rdb.Del(context.Background(), userKey)
-	}
+	c.Cookie(&fiber.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Expires:  time.Now().Add(-time.Hour),
+		MaxAge:   -1,
+		HTTPOnly: true,
+		Path:     "/",
+		Secure:   true, 
+		SameSite: "Lax", 
+	})
 
-	// 5) Fallback/Best-effort: hapus baris di DB berdasarkan nilai refresh_token (plaintext JWT)
-	_ = database.DB.Where("refresh_token = ?", rtPlain).Delete(&models.RefreshToken{}).Error
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Expires:  time.Now().Add(-time.Hour),
+		MaxAge:   -1,
+		HTTPOnly: true,
+		Path:     "/",
+		Secure:   true, 
+		SameSite: "Lax", 
+	})
 
 	return c.JSON(fiber.Map{"message": "logout sukses"})
 }
