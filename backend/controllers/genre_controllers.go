@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +14,45 @@ import (
 	"gorm.io/gorm"
 )
 
-// ListGenres - GET /genres?q=&page=&limit=
-// Mendukung pencarian sederhana pada name/slug dan pagination
+
+func ok(c *fiber.Ctx, status int, msg string, data any) error {
+	if data == nil {
+		return c.Status(status).JSON(fiber.Map{
+			"success": true,
+			"message": msg,
+		})
+	}
+	return c.Status(status).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+	})
+}
+
+func okList(c *fiber.Ctx, msg string, data any, page, limit int, total int64) error {
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+		"meta": fiber.Map{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+func fail(c *fiber.Ctx, status int, msg string, err error) error {
+	resp := fiber.Map{
+		"success": false,
+		"message": msg,
+	}
+	if err != nil && os.Getenv("APP_ENV") != "production" {
+		resp["error"] = err.Error()
+	}
+	return c.Status(status).JSON(resp)
+}
+
 func ListGenres(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -33,69 +71,62 @@ func ListGenres(c *fiber.Ctx) error {
 		db = db.Where("name LIKE ? OR slug LIKE ?", like, like)
 	}
 
-	var genres []models.Genre
-	if err := db.Order("name ASC").Limit(limit).Offset(offset).Find(&genres).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil daftar genre", "error": err.Error()})
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return fail(c, http.StatusInternalServerError, "Gagal menghitung total genre", err)
 	}
 
-	return c.Status(http.StatusOK).JSON(fiber.Map{
-		"page":  page,
-		"limit": limit,
-		"data":  genres,
-	})
+	var genres []models.Genre
+	if err := db.Order("name ASC").Limit(limit).Offset(offset).Find(&genres).Error; err != nil {
+		return fail(c, http.StatusInternalServerError, "Gagal mengambil daftar genre", err)
+	}
+
+	return okList(c, "Daftar genre berhasil diambil", genres, page, limit, total)
 }
 
-// GetGenre - GET /genres/:id
-// :id dapat berupa numeric id atau slug
 func GetGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
 
-	// coba numeric id dulu
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&g, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+				return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+			return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 		}
-		return c.Status(http.StatusOK).JSON(fiber.Map{"data": g})
+		return ok(c, http.StatusOK, "Genre berhasil diambil", g)
 	}
 
-	// fallback: cari berdasarkan slug
 	if err := database.DB.Where("slug = ?", param).First(&g).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+			return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+		return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"data": g})
+	return ok(c, http.StatusOK, "Genre berhasil diambil", g)
 }
 
-// CreateGenre - POST /genres
-// body JSON: { "name": "Romance", "slug": "romance" }
 func CreateGenre(c *fiber.Ctx) error {
 	var payload struct {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return fail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 	payload.Name = strings.TrimSpace(payload.Name)
 	payload.Slug = strings.TrimSpace(payload.Slug)
-
 	if payload.Name == "" || payload.Slug == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "name dan slug wajib diisi"})
+		return fail(c, http.StatusBadRequest, "Name dan slug wajib diisi", nil)
 	}
 
-	// cek duplicate name/slug
 	var cnt int64
 	database.DB.Model(&models.Genre{}).
 		Where("name = ? OR slug = ?", payload.Name, payload.Slug).
 		Count(&cnt)
 	if cnt > 0 {
-		return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "name atau slug sudah digunakan"})
+		return fail(c, http.StatusConflict, "Name atau slug sudah digunakan", nil)
 	}
 
 	g := models.Genre{
@@ -105,31 +136,28 @@ func CreateGenre(c *fiber.Ctx) error {
 		UpdatedAt: time.Now(),
 	}
 	if err := database.DB.Create(&g).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat genre", "error": err.Error()})
+		return fail(c, http.StatusInternalServerError, "Gagal membuat genre", err)
 	}
-	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "genre dibuat", "genre": g})
+	return ok(c, http.StatusCreated, "Genre berhasil dibuat", g)
 }
 
-// UpdateGenre - PUT /genres/:id
-// body JSON: { "name": "...", "slug": "..." } (partial allowed)
 func UpdateGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
 
-	// ambil genre (by id or slug)
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&g, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+				return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+			return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 		}
 	} else {
 		if err := database.DB.Where("slug = ?", param).First(&g).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+				return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+			return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 		}
 	}
 
@@ -138,66 +166,63 @@ func UpdateGenre(c *fiber.Ctx) error {
 		Slug *string `json:"slug"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return fail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 
-	// jika mengubah name/slug, cek unique (kecuali milik record ini)
 	if payload.Name != nil {
 		newName := strings.TrimSpace(*payload.Name)
 		if newName == "" {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "name tidak boleh kosong"})
+			return fail(c, http.StatusBadRequest, "Name tidak boleh kosong", nil)
 		}
 		var cnt int64
 		database.DB.Model(&models.Genre{}).Where("name = ? AND id <> ?", newName, g.ID).Count(&cnt)
 		if cnt > 0 {
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "name sudah digunakan"})
+			return fail(c, http.StatusConflict, "Name sudah digunakan", nil)
 		}
 		g.Name = newName
 	}
 	if payload.Slug != nil {
 		newSlug := strings.TrimSpace(*payload.Slug)
 		if newSlug == "" {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "slug tidak boleh kosong"})
+			return fail(c, http.StatusBadRequest, "Slug tidak boleh kosong", nil)
 		}
 		var cnt int64
 		database.DB.Model(&models.Genre{}).Where("slug = ? AND id <> ?", newSlug, g.ID).Count(&cnt)
 		if cnt > 0 {
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "slug sudah digunakan"})
+			return fail(c, http.StatusConflict, "Slug sudah digunakan", nil)
 		}
 		g.Slug = newSlug
 	}
 
 	g.UpdatedAt = time.Now()
 	if err := database.DB.Save(&g).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memperbarui genre", "error": err.Error()})
+		return fail(c, http.StatusInternalServerError, "Gagal memperbarui genre", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "genre diperbarui", "genre": g})
+	return ok(c, http.StatusOK, "Genre berhasil diperbarui", g)
 }
 
-// DeleteGenre - DELETE /genres/:id
 func DeleteGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
 
-	// ambil genre
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&g, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+				return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+			return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 		}
 	} else {
 		if err := database.DB.Where("slug = ?", param).First(&g).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "genre tidak ditemukan"})
+				return fail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil genre", "error": err.Error()})
+			return fail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 		}
 	}
 
 	if err := database.DB.Delete(&g).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus genre", "error": err.Error()})
+		return fail(c, http.StatusInternalServerError, "Gagal menghapus genre", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "genre dihapus"})
+	return ok(c, http.StatusOK, "Genre berhasil dihapus", nil)
 }
