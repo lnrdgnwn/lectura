@@ -21,7 +21,7 @@ func AdminMiddleware() fiber.Handler {
 			roleStr = ""
 		}
 		if strings.ToLower(roleStr) != "admin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "forbidden: admin only"})
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Forbidden: admin only"})
 		}
 		return c.Next()
 	}
