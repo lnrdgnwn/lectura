@@ -19,8 +19,6 @@ import (
 	"gorm.io/gorm"
 )
 
-/* ===================== response helpers (konsisten) ===================== */
-
 func userOK(c *fiber.Ctx, status int, msg string, data any) error {
 	resp := fiber.Map{
 		"success": true,
@@ -56,8 +54,6 @@ func userFail(c *fiber.Ctx, status int, msg string, err error) error {
 	return c.Status(status).JSON(resp)
 }
 
-/* ===================== auth dari cookie (tetap) ===================== */
-
 func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	enc := c.Cookies("access_token", "")
 	if enc == "" {
@@ -88,7 +84,6 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 		return 0, "", errors.New("invalid token claims")
 	}
 
-	// cek exp (opsional—jwtop sudah mestinya handle)
 	if expVal, ok := claims["exp"]; ok {
 		if exp, ok := expVal.(float64); ok {
 			if time.Unix(int64(exp), 0).Before(time.Now()) {
@@ -118,9 +113,6 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	return uid, role, nil
 }
 
-/* ===================== handlers ===================== */
-
-// GET /api/v1/users/me
 func GetMe(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -138,8 +130,6 @@ func GetMe(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Detail profil berhasil diambil", u)
 }
 
-// PUT /api/v1/users/me
-// Menerima JSON/x-www-form-urlencoded/multipart
 func UpdateProfile(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -158,7 +148,6 @@ func UpdateProfile(c *fiber.Ctx) error {
 	}
 	_ = c.BodyParser(&payload)
 
-	// fallback multipart
 	if payload.Username == "" {
 		payload.Username = strings.TrimSpace(c.FormValue("username"))
 	}
@@ -169,7 +158,6 @@ func UpdateProfile(c *fiber.Ctx) error {
 		payload.Password = c.FormValue("password")
 	}
 
-	// optional: cek duplikasi bila username/email diganti
 	if s := strings.TrimSpace(payload.Username); s != "" && s != u.Username {
 		var cnt int64
 		if err := database.DB.Model(&models.User{}).Where("username = ? AND id <> ?", s, u.ID).Count(&cnt).Error; err != nil {
@@ -199,7 +187,6 @@ func UpdateProfile(c *fiber.Ctx) error {
 		u.PasswordHash = string(h)
 	}
 
-	// upload avatar (opsional)
 	if _, ferr := c.FormFile("profile_picture"); ferr == nil {
 		if path, err := utils.SaveFile(c, "profile_picture", "profile_picture"); err == nil {
 			u.ProfilePicture = &path
@@ -217,7 +204,6 @@ func UpdateProfile(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Profil berhasil diperbarui", u)
 }
 
-// GET /api/v1/admin/users?page=&limit=  (admin only)
 func ListUsers(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -256,7 +242,6 @@ func ListUsers(c *fiber.Ctx) error {
 	return userOKList(c, "Daftar user berhasil diambil", users, page, limit, total)
 }
 
-// PUT /api/v1/users/change-password
 func ChangePassword(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -310,7 +295,6 @@ func ChangePassword(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Password berhasil diubah", nil)
 }
 
-// DELETE /api/v1/admin/users/:id  (admin only)
 func DeleteUser(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {

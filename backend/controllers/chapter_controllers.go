@@ -47,7 +47,6 @@ func chapterFail(c *fiber.Ctx, status int, msg string, err error) error {
 		"success": false,
 		"message": msg,
 	}
-	// Tampilkan detail error saat non-production
 	if err != nil && os.Getenv("APP_ENV") != "production" {
 		resp["error"] = err.Error()
 	}
@@ -77,7 +76,7 @@ func GetAllChapters(c *fiber.Ctx) error {
     _, role, _ := getAuthFromAccessCookieNovel(c)
 
     db := database.DB.Model(&models.Chapter{})
-    if strings.ToUpper(role) != "ADMIN" {
+    if strings.ToUpper(role) != "admin" {
         db = db.Scopes(onlyPublished) 
     }
     if novelID > 0 {
@@ -98,7 +97,7 @@ func GetAllChapters(c *fiber.Ctx) error {
     }
 
     msg := "Daftar chapter (terbit saja)"
-    if strings.ToUpper(role) == "ADMIN" {
+    if strings.ToUpper(role) == "admin" {
         msg = "Daftar chapter (semua)"
     }
     return chapterListOK(c, msg, chapters, page, limit, total)
