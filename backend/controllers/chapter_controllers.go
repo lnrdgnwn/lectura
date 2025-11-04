@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"strings"
 
 	"final_project/database"
 	"final_project/models"
@@ -58,29 +59,51 @@ func onlyPublished(db *gorm.DB) *gorm.DB {
 }
 
 func GetAllChapters(c *fiber.Ctx) error {
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "50"))
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 50
-	}
-	offset := (page - 1) * limit
+    page, _ := strconv.Atoi(c.Query("page", "1"))
+    limit, _ := strconv.Atoi(c.Query("limit", "50"))
+    if page < 1 { page = 1 }
+    if limit < 1 || limit > 200 { limit = 50 }
+    offset := (page - 1) * limit
 
-	var chapters []models.Chapter
-	if err := database.DB.
-		Order("novel_id ASC, order_no ASC").
-		Limit(limit).Offset(offset).
-		Find(&chapters).Error; err != nil {
-		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapters", err)
-	}
+    var novelID int
+    if nv := strings.TrimSpace(c.Query("novel_id", "")); nv != "" {
+        n, err := strconv.Atoi(nv)
+        if err != nil || n <= 0 {
+            return chapterFail(c, http.StatusBadRequest, "novel_id tidak valid", err)
+        }
+        novelID = n
+    }
 
-	var total int64
-	_ = database.DB.Model(&models.Chapter{}).Count(&total)
+    _, role, _ := getAuthFromAccessCookieNovel(c)
 
-	return chapterListOK(c, "Daftar chapter (semua)", chapters, page, limit, total)
+    db := database.DB.Model(&models.Chapter{})
+    if strings.ToUpper(role) != "ADMIN" {
+        db = db.Scopes(onlyPublished) 
+    }
+    if novelID > 0 {
+        db = db.Where("novel_id = ?", novelID)
+    }
+
+    var total int64
+    if err := db.Count(&total).Error; err != nil {
+        return chapterFail(c, http.StatusInternalServerError, "Gagal menghitung total chapter", err)
+    }
+
+    var chapters []models.Chapter
+    if err := db.
+        Order("novel_id ASC, order_no ASC").
+        Limit(limit).Offset(offset).
+        Find(&chapters).Error; err != nil {
+        return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapters", err)
+    }
+
+    msg := "Daftar chapter (terbit saja)"
+    if strings.ToUpper(role) == "ADMIN" {
+        msg = "Daftar chapter (semua)"
+    }
+    return chapterListOK(c, msg, chapters, page, limit, total)
 }
+
 
 func AddChapter(c *fiber.Ctx) error {
 	var payload struct {
