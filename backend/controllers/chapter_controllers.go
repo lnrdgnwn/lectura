@@ -1,7 +1,9 @@
+// controllers/chapter_controllers.go
 package controllers
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -11,6 +13,49 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
+
+func chapterOK(c *fiber.Ctx, status int, msg string, data any) error {
+	if data == nil {
+		return c.Status(status).JSON(fiber.Map{
+			"success": true,
+			"message": msg,
+		})
+	}
+	return c.Status(status).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+	})
+}
+
+func chapterListOK(c *fiber.Ctx, msg string, data any, page, limit int, total int64) error {
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+		"meta": fiber.Map{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+func chapterFail(c *fiber.Ctx, status int, msg string, err error) error {
+	resp := fiber.Map{
+		"success": false,
+		"message": msg,
+	}
+	// Tampilkan detail error saat non-production
+	if err != nil && os.Getenv("APP_ENV") != "production" {
+		resp["error"] = err.Error()
+	}
+	return c.Status(status).JSON(resp)
+}
+
+func onlyPublished(db *gorm.DB) *gorm.DB {
+	return db.Where("published_at IS NOT NULL AND published_at <= ?", time.Now())
+}
 
 func GetAllChapters(c *fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -24,112 +69,147 @@ func GetAllChapters(c *fiber.Ctx) error {
 	offset := (page - 1) * limit
 
 	var chapters []models.Chapter
-	if err := database.DB.Order("novel_id ASC, order_no ASC").
+	if err := database.DB.
+		Order("novel_id ASC, order_no ASC").
 		Limit(limit).Offset(offset).
 		Find(&chapters).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapters", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapters", err)
 	}
 
-	// optional: total count untuk frontend pagination
 	var total int64
-	database.DB.Model(&models.Chapter{}).Count(&total)
+	_ = database.DB.Model(&models.Chapter{}).Count(&total)
 
-	return c.Status(http.StatusOK).JSON(fiber.Map{
-		"page":     page,
-		"limit":    limit,
-		"total":    total,
-		"chapters": chapters,
-	})
+	return chapterListOK(c, "Daftar chapter (semua)", chapters, page, limit, total)
 }
 
-
-// AddChapter - POST /chapters
-// Body JSON: { "novel_id": uint, "title": "string", "content":"string" }
 func AddChapter(c *fiber.Ctx) error {
 	var payload struct {
-		NovelID uint   `json:"novel_id"`
-		Title   string `json:"title"`
-		Content string `json:"content"`
+		NovelID     uint    `json:"novel_id"`
+		Title       string  `json:"title"`
+		Content     string  `json:"content"`
+		PublishNow  *bool   `json:"publish_now"`
+		PublishedAt *string `json:"published_at"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return chapterFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 	if payload.NovelID == 0 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "novel_id wajib diisi"})
+		return chapterFail(c, http.StatusBadRequest, "novel_id wajib diisi", nil)
 	}
 
-	// cari last order_no untuk novel tersebut (append)
+	uid, role, err := getAuthFromAccessCookieNovel(c)
+	if err != nil {
+		return chapterFail(c, http.StatusUnauthorized, "Unauthorized", err)
+	}
+
+	var novel models.Novel
+	if err := database.DB.First(&novel, payload.NovelID).Error; err != nil {
+		return chapterFail(c, http.StatusBadRequest, "Novel tidak ditemukan", err)
+	}
+	if novel.AuthorID != uid && role != "admin" {
+		return chapterFail(c, http.StatusForbidden, "Tidak berwenang menambah chapter untuk novel ini", nil)
+	}
+
 	var last models.Chapter
-	database.DB.Where("novel_id = ?", payload.NovelID).Order("order_no DESC").First(&last)
+	_ = database.DB.Where("novel_id = ?", payload.NovelID).Order("order_no DESC").First(&last)
 	nextOrder := 1
 	if last.ID != 0 {
 		nextOrder = last.OrderNo + 1
 	}
 
+	var pubAt *time.Time
+	if payload.PublishNow != nil && *payload.PublishNow {
+		now := time.Now()
+		pubAt = &now
+	} else if payload.PublishedAt != nil && *payload.PublishedAt != "" {
+		if t, err := time.Parse(time.RFC3339, *payload.PublishedAt); err == nil {
+			pubAt = &t
+		} else {
+			return chapterFail(c, http.StatusBadRequest, "published_at harus RFC3339 (contoh: 2006-01-02T15:04:05Z)", err)
+		}
+	}
+
+	title := payload.Title
+	content := payload.Content
+
 	ch := models.Chapter{
-		NovelID:   payload.NovelID,
-		OrderNo:   nextOrder,
-		Title:     &payload.Title,
-		Content:   &payload.Content,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		NovelID:     payload.NovelID,
+		OrderNo:     nextOrder,
+		Title:       &title,
+		Content:     &content,
+		PublishedAt: pubAt,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	if err := database.DB.Create(&ch).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menambah chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal menambah chapter", err)
 	}
-	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "chapter ditambahkan", "chapter": ch})
+	return chapterOK(c, http.StatusCreated, "Chapter ditambahkan", ch)
 }
 
-// ListChapters - GET /novels/:novel_id/chapters
-// Mengembalikan semua chapter untuk sebuah novel (urut berdasarkan order_no)
 func ListChapters(c *fiber.Ctx) error {
 	nid := c.Params("novel_id")
 	nidInt, err := strconv.Atoi(nid)
 	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "novel_id tidak valid"})
+		return chapterFail(c, http.StatusBadRequest, "novel_id tidak valid", err)
 	}
 
 	var chapters []models.Chapter
-	if err := database.DB.Where("novel_id = ?", nidInt).Order("order_no ASC").Find(&chapters).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapters", "error": err.Error()})
+	if err := database.DB.
+		Where("novel_id = ?", nidInt).
+		Scopes(onlyPublished).
+		Order("order_no ASC").
+		Find(&chapters).Error; err != nil {
+		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapters", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"chapters": chapters})
+	return chapterOK(c, http.StatusOK, "Daftar chapter terbit", chapters)
 }
 
-// GetChapter - GET /chapters/:id
 func GetChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var ch models.Chapter
-	if err := database.DB.First(&ch, id).Error; err != nil {
+	if err := database.DB.Scopes(onlyPublished).First(&ch, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "chapter tidak ditemukan"})
+			return chapterFail(c, http.StatusNotFound, "Chapter tidak ditemukan atau belum terbit", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapter", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"chapter": ch})
+	return chapterOK(c, http.StatusOK, "Detail chapter", ch)
 }
 
-// UpdateChapter - PUT /chapters/:id
-// Body JSON (partial allowed): { "title": "string", "content":"string", "order_no": int, "published_at": "RFC3339 string" }
 func UpdateChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
+
 	var ch models.Chapter
 	if err := database.DB.First(&ch, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "chapter tidak ditemukan"})
+			return chapterFail(c, http.StatusNotFound, "Chapter tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapter", err)
+	}
+
+	uid, role, err := getAuthFromAccessCookieNovel(c)
+	if err != nil {
+		return chapterFail(c, http.StatusUnauthorized, "Unauthorized", err)
+	}
+	var novel models.Novel
+	if err := database.DB.Select("id, author_id").First(&novel, ch.NovelID).Error; err != nil {
+		return chapterFail(c, http.StatusBadRequest, "Novel tidak ditemukan", err)
+	}
+	if novel.AuthorID != uid && role != "admin" {
+		return chapterFail(c, http.StatusForbidden, "Tidak berwenang mengubah/menghapus chapter ini", nil)
 	}
 
 	var payload struct {
 		Title       *string `json:"title"`
 		Content     *string `json:"content"`
 		OrderNo     *int    `json:"order_no"`
-		PublishedAt *string `json:"published_at"` // expect RFC3339 if provided
+		PublishNow  *bool   `json:"publish_now"`
+		PublishedAt *string `json:"published_at"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return chapterFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 
 	if payload.Title != nil {
@@ -141,34 +221,55 @@ func UpdateChapter(c *fiber.Ctx) error {
 	if payload.OrderNo != nil {
 		ch.OrderNo = *payload.OrderNo
 	}
-	if payload.PublishedAt != nil && *payload.PublishedAt != "" {
-		if t, err := time.Parse(time.RFC3339, *payload.PublishedAt); err == nil {
-			ch.PublishedAt = &t
+
+	if payload.PublishNow != nil && *payload.PublishNow {
+		now := time.Now()
+		ch.PublishedAt = &now
+	} else if payload.PublishedAt != nil {
+		if *payload.PublishedAt == "" {
+			ch.PublishedAt = nil
 		} else {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "published_at harus format RFC3339 (contoh: 2006-01-02T15:04:05Z)"})
+			if t, err := time.Parse(time.RFC3339, *payload.PublishedAt); err == nil {
+				ch.PublishedAt = &t
+			} else {
+				return chapterFail(c, http.StatusBadRequest, "published_at harus RFC3339 (contoh: 2006-01-02T15:04:05Z)", err)
+			}
 		}
 	}
 
 	ch.UpdatedAt = time.Now()
 	if err := database.DB.Save(&ch).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memperbarui chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal memperbarui chapter", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "chapter diperbarui", "chapter": ch})
+	return chapterOK(c, http.StatusOK, "Chapter diperbarui", ch)
 }
 
-// DeleteChapter - DELETE /chapters/:id
 func DeleteChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
+
 	var ch models.Chapter
 	if err := database.DB.First(&ch, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "chapter tidak ditemukan"})
+			return chapterFail(c, http.StatusNotFound, "Chapter tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal mengambil chapter", err)
+	}
+
+	uid, role, err := getAuthFromAccessCookieNovel(c)
+	if err != nil {
+		return chapterFail(c, http.StatusUnauthorized, "Unauthorized", err)
+	}
+
+	var novel models.Novel
+	if err := database.DB.Select("id, author_id").First(&novel, ch.NovelID).Error; err != nil {
+		return chapterFail(c, http.StatusBadRequest, "Novel tidak ditemukan", err)
+	}
+	if novel.AuthorID != uid && role != "admin" {
+		return chapterFail(c, http.StatusForbidden, "Tidak berwenang mengubah/menghapus chapter ini", nil)
 	}
 
 	if err := database.DB.Delete(&ch).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus chapter", "error": err.Error()})
+		return chapterFail(c, http.StatusInternalServerError, "Gagal menghapus chapter", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "chapter dihapus"})
+	return chapterOK(c, http.StatusOK, "Chapter dihapus", nil)
 }

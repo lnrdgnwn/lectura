@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,7 +15,41 @@ import (
 	"gorm.io/gorm"
 )
 
-// generateSlug sederhana
+func tagOK(c *fiber.Ctx, status int, msg string, data any) error {
+	resp := fiber.Map{
+		"success": true,
+		"message": msg,
+	}
+	if data != nil {
+		resp["data"] = data
+	}
+	return c.Status(status).JSON(resp)
+}
+
+func tagOKList(c *fiber.Ctx, msg string, data any, page, limit int, total int64) error {
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+		"meta": fiber.Map{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+func tagFail(c *fiber.Ctx, status int, msg string, err error) error {
+	resp := fiber.Map{
+		"success": false,
+		"message": msg,
+	}
+	if err != nil && os.Getenv("APP_ENV") != "production" {
+		resp["error"] = err.Error()
+	}
+	return c.Status(status).JSON(resp)
+}
+
 func generateSlug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	re := regexp.MustCompile(`[^a-z0-9]+`)
@@ -32,7 +67,6 @@ func generateSlug(s string) string {
 	return s
 }
 
-// ListTags - GET /tags?q=&page=&limit=
 func ListTags(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -46,19 +80,27 @@ func ListTags(c *fiber.Ctx) error {
 	offset := (page - 1) * limit
 
 	db := database.DB.Model(&models.Tag{})
+	countDB := database.DB.Model(&models.Tag{})
+
 	if q != "" {
 		like := "%" + q + "%"
 		db = db.Where("name LIKE ? OR slug LIKE ?", like, like)
+		countDB = countDB.Where("name LIKE ? OR slug LIKE ?", like, like)
+	}
+
+	var total int64
+	if err := countDB.Count(&total).Error; err != nil {
+		return tagFail(c, http.StatusInternalServerError, "Gagal menghitung total tag", err)
 	}
 
 	var tags []models.Tag
 	if err := db.Order("name ASC").Limit(limit).Offset(offset).Find(&tags).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil daftar tag", "error": err.Error()})
+		return tagFail(c, http.StatusInternalServerError, "Gagal mengambil daftar tag", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"page": page, "limit": limit, "data": tags})
+
+	return tagOKList(c, "Daftar tag berhasil diambil", tags, page, limit, total)
 }
 
-// GetTag - GET /tags/:id (id numeric atau slug)
 func GetTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag
@@ -66,36 +108,35 @@ func GetTag(c *fiber.Ctx) error {
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&t, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+				return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+			return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 		}
-		return c.Status(http.StatusOK).JSON(fiber.Map{"data": t})
+		return tagOK(c, http.StatusOK, "Detail tag berhasil diambil", t)
 	}
 
 	if err := database.DB.Where("slug = ?", param).First(&t).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+			return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+		return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"data": t})
+	return tagOK(c, http.StatusOK, "Detail tag berhasil diambil", t)
 }
 
-// CreateTag - POST /tags  (admin)
 func CreateTag(c *fiber.Ctx) error {
 	var payload struct {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return tagFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 	payload.Name = strings.TrimSpace(payload.Name)
 	payload.Slug = strings.TrimSpace(payload.Slug)
 
 	if payload.Name == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "name wajib diisi"})
+		return tagFail(c, http.StatusBadRequest, "Field name wajib diisi", nil)
 	}
 	if payload.Slug == "" {
 		payload.Slug = generateSlug(payload.Name)
@@ -103,11 +144,14 @@ func CreateTag(c *fiber.Ctx) error {
 		payload.Slug = generateSlug(payload.Slug)
 	}
 
-	// unik check
 	var cnt int64
-	database.DB.Model(&models.Tag{}).Where("name = ? OR slug = ?", payload.Name, payload.Slug).Count(&cnt)
+	if err := database.DB.Model(&models.Tag{}).
+		Where("name = ? OR slug = ?", payload.Name, payload.Slug).
+		Count(&cnt).Error; err != nil {
+		return tagFail(c, http.StatusInternalServerError, "Gagal memeriksa duplikasi tag", err)
+	}
 	if cnt > 0 {
-		return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "name atau slug sudah digunakan"})
+		return tagFail(c, http.StatusConflict, "Name atau slug sudah digunakan", nil)
 	}
 
 	tag := models.Tag{
@@ -117,12 +161,11 @@ func CreateTag(c *fiber.Ctx) error {
 		UpdatedAt: time.Now(),
 	}
 	if err := database.DB.Create(&tag).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal membuat tag", "error": err.Error()})
+		return tagFail(c, http.StatusInternalServerError, "Gagal membuat tag", err)
 	}
-	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "tag dibuat", "tag": tag})
+	return tagOK(c, http.StatusCreated, "Tag berhasil dibuat", tag)
 }
 
-// UpdateTag - PUT /tags/:id  (admin)
 func UpdateTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag
@@ -130,16 +173,16 @@ func UpdateTag(c *fiber.Ctx) error {
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&t, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+				return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+			return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 		}
 	} else {
 		if err := database.DB.Where("slug = ?", param).First(&t).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+				return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+			return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 		}
 	}
 
@@ -148,42 +191,49 @@ func UpdateTag(c *fiber.Ctx) error {
 		Slug *string `json:"slug"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return tagFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 
 	if payload.Name != nil {
 		newName := strings.TrimSpace(*payload.Name)
 		if newName == "" {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "name tidak boleh kosong"})
+			return tagFail(c, http.StatusBadRequest, "Field name tidak boleh kosong", nil)
 		}
 		var cnt int64
-		database.DB.Model(&models.Tag{}).Where("name = ? AND id <> ?", newName, t.ID).Count(&cnt)
+		if err := database.DB.Model(&models.Tag{}).
+			Where("name = ? AND id <> ?", newName, t.ID).
+			Count(&cnt).Error; err != nil {
+			return tagFail(c, http.StatusInternalServerError, "Gagal memeriksa duplikasi name", err)
+		}
 		if cnt > 0 {
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "name sudah digunakan"})
+			return tagFail(c, http.StatusConflict, "Name sudah digunakan", nil)
 		}
 		t.Name = newName
 	}
 	if payload.Slug != nil {
 		newSlug := generateSlug(strings.TrimSpace(*payload.Slug))
 		if newSlug == "" {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "slug tidak boleh kosong"})
+			return tagFail(c, http.StatusBadRequest, "Field slug tidak boleh kosong", nil)
 		}
 		var cnt int64
-		database.DB.Model(&models.Tag{}).Where("slug = ? AND id <> ?", newSlug, t.ID).Count(&cnt)
+		if err := database.DB.Model(&models.Tag{}).
+			Where("slug = ? AND id <> ?", newSlug, t.ID).
+			Count(&cnt).Error; err != nil {
+			return tagFail(c, http.StatusInternalServerError, "Gagal memeriksa duplikasi slug", err)
+		}
 		if cnt > 0 {
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "slug sudah digunakan"})
+			return tagFail(c, http.StatusConflict, "Slug sudah digunakan", nil)
 		}
 		t.Slug = newSlug
 	}
 
 	t.UpdatedAt = time.Now()
 	if err := database.DB.Save(&t).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memperbarui tag", "error": err.Error()})
+		return tagFail(c, http.StatusInternalServerError, "Gagal memperbarui tag", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "tag diperbarui", "tag": t})
+	return tagOK(c, http.StatusOK, "Tag berhasil diperbarui", t)
 }
 
-// DeleteTag - DELETE /tags/:id  (admin)
 func DeleteTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag
@@ -191,22 +241,21 @@ func DeleteTag(c *fiber.Ctx) error {
 	if id, err := strconv.Atoi(param); err == nil {
 		if err := database.DB.First(&t, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+				return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+			return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 		}
 	} else {
 		if err := database.DB.Where("slug = ?", param).First(&t).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "tag tidak ditemukan"})
+				return tagFail(c, http.StatusNotFound, "Tag tidak ditemukan", nil)
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil tag", "error": err.Error()})
+			return tagFail(c, http.StatusInternalServerError, "Gagal mengambil tag", err)
 		}
 	}
 
 	if err := database.DB.Delete(&t).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus tag", "error": err.Error()})
+		return tagFail(c, http.StatusInternalServerError, "Gagal menghapus tag", err)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "tag dihapus"})
+	return tagOK(c, http.StatusOK, "Tag berhasil dihapus", nil)
 }
-

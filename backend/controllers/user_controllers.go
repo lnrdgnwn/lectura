@@ -1,3 +1,4 @@
+// controllers/user_controllers.go
 package controllers
 
 import (
@@ -18,22 +19,56 @@ import (
 	"gorm.io/gorm"
 )
 
-/* ===================== AUTH HELPERS (COOKIE-BASED) ===================== */
+/* ===================== response helpers (konsisten) ===================== */
 
-// Ambil user_id & role dari cookie access_token (terenkripsi AES-GCM).
+func userOK(c *fiber.Ctx, status int, msg string, data any) error {
+	resp := fiber.Map{
+		"success": true,
+		"message": msg,
+	}
+	if data != nil {
+		resp["data"] = data
+	}
+	return c.Status(status).JSON(resp)
+}
+
+func userOKList(c *fiber.Ctx, msg string, data any, page, limit int, total int64) error {
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+		"meta": fiber.Map{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+func userFail(c *fiber.Ctx, status int, msg string, err error) error {
+	resp := fiber.Map{
+		"success": false,
+		"message": msg,
+	}
+	if err != nil && os.Getenv("APP_ENV") != "production" {
+		resp["error"] = err.Error()
+	}
+	return c.Status(status).JSON(resp)
+}
+
+/* ===================== auth dari cookie (tetap) ===================== */
+
 func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	enc := c.Cookies("access_token", "")
 	if enc == "" {
 		return 0, "", errors.New("missing access_token cookie")
 	}
 
-	// Cookie kita simpan terenkripsi → decrypt dulu ke plaintext JWT
 	tokenStr, err := utils.Decrypt(enc)
 	if err != nil || strings.TrimSpace(tokenStr) == "" {
 		return 0, "", errors.New("invalid encrypted cookie")
 	}
 
-	// Parse & verify JWT (HS256) dengan secret env
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		return 0, "", errors.New("server misconfigured: JWT_SECRET missing")
@@ -53,17 +88,15 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 		return 0, "", errors.New("invalid token claims")
 	}
 
-	// Validasi exp secara eksplisit (opsional)
+	// cek exp (opsional—jwtop sudah mestinya handle)
 	if expVal, ok := claims["exp"]; ok {
-		switch exp := expVal.(type) {
-		case float64:
+		if exp, ok := expVal.(float64); ok {
 			if time.Unix(int64(exp), 0).Before(time.Now()) {
 				return 0, "", errors.New("token expired")
 			}
 		}
 	}
 
-	// Ambil id (claim "id") & role
 	var uid uint
 	switch v := claims["id"].(type) {
 	case float64:
@@ -71,6 +104,8 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	case string:
 		if n, err := strconv.Atoi(v); err == nil {
 			uid = uint(n)
+		} else {
+			return 0, "", errors.New("token id not numeric")
 		}
 	default:
 		return 0, "", errors.New("token missing id")
@@ -80,43 +115,42 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	if r, ok := claims["role"].(string); ok {
 		role = r
 	}
-
 	return uid, role, nil
 }
 
-/* ===================== HANDLERS ===================== */
+/* ===================== handlers ===================== */
 
-// GetMe: GET /api/v1/users/me
+// GET /api/v1/users/me
 func GetMe(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return userFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
 	var u models.User
 	if err := database.DB.First(&u, uid).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "user tidak ditemukan"})
+			return userFail(c, http.StatusNotFound, "User tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+		return userFail(c, http.StatusInternalServerError, "Gagal mengambil user", err)
 	}
 	u.PasswordHash = ""
-	return c.JSON(fiber.Map{"user": u})
+	return userOK(c, http.StatusOK, "Detail profil berhasil diambil", u)
 }
 
-// UpdateProfile: PUT /api/v1/users/me (form-data atau json)
+// PUT /api/v1/users/me
+// Menerima JSON/x-www-form-urlencoded/multipart
 func UpdateProfile(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return userFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
 	var u models.User
 	if err := database.DB.First(&u, uid).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+		return userFail(c, http.StatusInternalServerError, "Gagal mengambil user", err)
 	}
 
-	// 1) BodyParser akan handle JSON & x-www-form-urlencoded
 	var payload struct {
 		Username string `json:"username" form:"username"`
 		Email    string `json:"email" form:"email"`
@@ -124,56 +158,73 @@ func UpdateProfile(c *fiber.Ctx) error {
 	}
 	_ = c.BodyParser(&payload)
 
-	// 2) Fallback untuk multipart/form-data (kalau ada)
+	// fallback multipart
 	if payload.Username == "" {
-		payload.Username = c.FormValue("username")
+		payload.Username = strings.TrimSpace(c.FormValue("username"))
 	}
 	if payload.Email == "" {
-		payload.Email = c.FormValue("email")
+		payload.Email = strings.TrimSpace(c.FormValue("email"))
 	}
 	if payload.Password == "" {
 		payload.Password = c.FormValue("password")
 	}
 
-	// apply perubahan
-	if s := strings.TrimSpace(payload.Username); s != "" {
+	// optional: cek duplikasi bila username/email diganti
+	if s := strings.TrimSpace(payload.Username); s != "" && s != u.Username {
+		var cnt int64
+		if err := database.DB.Model(&models.User{}).Where("username = ? AND id <> ?", s, u.ID).Count(&cnt).Error; err != nil {
+			return userFail(c, http.StatusInternalServerError, "Gagal memeriksa duplikasi username", err)
+		}
+		if cnt > 0 {
+			return userFail(c, http.StatusConflict, "Username sudah digunakan", nil)
+		}
 		u.Username = s
 	}
-	if s := strings.TrimSpace(payload.Email); s != "" {
+	if s := strings.TrimSpace(payload.Email); s != "" && s != u.Email {
+		var cnt int64
+		if err := database.DB.Model(&models.User{}).Where("email = ? AND id <> ?", s, u.ID).Count(&cnt).Error; err != nil {
+			return userFail(c, http.StatusInternalServerError, "Gagal memeriksa duplikasi email", err)
+		}
+		if cnt > 0 {
+			return userFail(c, http.StatusConflict, "Email sudah digunakan", nil)
+		}
 		u.Email = s
 	}
+
 	if payload.Password != "" {
 		h, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghash password"})
+			return userFail(c, http.StatusInternalServerError, "Gagal memproses password", err)
 		}
 		u.PasswordHash = string(h)
 	}
 
-	// 3) handle upload avatar (multipart)
+	// upload avatar (opsional)
 	if _, ferr := c.FormFile("profile_picture"); ferr == nil {
 		if path, err := utils.SaveFile(c, "profile_picture", "profile_picture"); err == nil {
 			u.ProfilePicture = &path
+		} else {
+			return userFail(c, http.StatusBadRequest, "Gagal menyimpan foto profil", err)
 		}
 	}
 
 	u.UpdatedAt = time.Now()
 	if err := database.DB.Save(&u).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan perubahan"})
+		return userFail(c, http.StatusInternalServerError, "Gagal menyimpan perubahan profil", err)
 	}
 
 	u.PasswordHash = ""
-	return c.JSON(fiber.Map{"message": "profil diperbarui", "user": u})
+	return userOK(c, http.StatusOK, "Profil berhasil diperbarui", u)
 }
 
-// ListUsers: GET /api/v1/admin/users?page=1&limit=20  (admin only)
+// GET /api/v1/admin/users?page=&limit=  (admin only)
 func ListUsers(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return userFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 	if strings.ToLower(role) != "admin" {
-		return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden - admin only"})
+		return userFail(c, http.StatusForbidden, "Forbidden - admin only", nil)
 	}
 
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -181,23 +232,35 @@ func ListUsers(c *fiber.Ctx) error {
 	if page < 1 {
 		page = 1
 	}
+	if limit < 1 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
+	var total int64
+	if err := database.DB.Model(&models.User{}).Count(&total).Error; err != nil {
+		return userFail(c, http.StatusInternalServerError, "Gagal menghitung total user", err)
+	}
+
 	var users []models.User
-	if err := database.DB.Model(&models.User{}).Limit(limit).Offset(offset).Find(&users).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+	if err := database.DB.Model(&models.User{}).
+		Order("created_at DESC").
+		Limit(limit).Offset(offset).
+		Find(&users).Error; err != nil {
+		return userFail(c, http.StatusInternalServerError, "Gagal mengambil daftar user", err)
 	}
 	for i := range users {
 		users[i].PasswordHash = ""
 	}
-	return c.JSON(fiber.Map{"page": page, "limit": limit, "data": users})
+
+	return userOKList(c, "Daftar user berhasil diambil", users, page, limit, total)
 }
 
-// ChangePassword: PUT /api/v1/users/change-password
+// PUT /api/v1/users/change-password
 func ChangePassword(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return userFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
 	var payload struct {
@@ -205,65 +268,64 @@ func ChangePassword(c *fiber.Ctx) error {
 		NewPassword string `json:"new_password" form:"new_password"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return userFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 
 	payload.OldPassword = strings.TrimSpace(payload.OldPassword)
 	payload.NewPassword = strings.TrimSpace(payload.NewPassword)
 
 	if payload.OldPassword == "" || payload.NewPassword == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "old_password dan new_password wajib diisi"})
+		return userFail(c, http.StatusBadRequest, "old_password dan new_password wajib diisi", nil)
 	}
 	if payload.OldPassword == payload.NewPassword {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru harus berbeda dari password lama"})
+		return userFail(c, http.StatusBadRequest, "Password baru harus berbeda dari password lama", nil)
 	}
 	if len(payload.NewPassword) < 8 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "password baru minimal 8 karakter"})
+		return userFail(c, http.StatusBadRequest, "Password baru minimal 8 karakter", nil)
 	}
 
 	var u models.User
 	if err := database.DB.First(&u, uid).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "user tidak ditemukan"})
+			return userFail(c, http.StatusNotFound, "User tidak ditemukan", nil)
 		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil user"})
+		return userFail(c, http.StatusInternalServerError, "Gagal mengambil user", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(payload.OldPassword)); err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "password lama salah"})
+		return userFail(c, http.StatusUnauthorized, "Password lama salah", nil)
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(payload.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memproses password baru"})
+		return userFail(c, http.StatusInternalServerError, "Gagal memproses password baru", err)
 	}
 
 	u.PasswordHash = string(hashed)
 	u.UpdatedAt = time.Now()
-
 	if err := database.DB.Save(&u).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menyimpan password baru"})
+		return userFail(c, http.StatusInternalServerError, "Gagal menyimpan password baru", err)
 	}
 
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "password berhasil diubah"})
+	return userOK(c, http.StatusOK, "Password berhasil diubah", nil)
 }
 
-// DeleteUser: DELETE /api/v1/admin/users/:id (admin only)
+// DELETE /api/v1/admin/users/:id  (admin only)
 func DeleteUser(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return userFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 	if strings.ToLower(role) != "admin" {
-		return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "forbidden - admin only"})
+		return userFail(c, http.StatusForbidden, "Forbidden - admin only", nil)
 	}
 
 	id := c.Params("id")
-	if id == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "id wajib"})
+	if strings.TrimSpace(id) == "" {
+		return userFail(c, http.StatusBadRequest, "Parameter id wajib", nil)
 	}
 	if err := database.DB.Delete(&models.User{}, id).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus user"})
+		return userFail(c, http.StatusInternalServerError, "Gagal menghapus user", err)
 	}
-	return c.JSON(fiber.Map{"message": "user dihapus"})
+	return userOK(c, http.StatusOK, "User berhasil dihapus", nil)
 }
