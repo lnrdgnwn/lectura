@@ -1,10 +1,12 @@
+// controllers/bookmark_controllers.go
 package controllers
 
 import (
 	"errors"
-	"net/http"
-	"time"
 	"fmt"
+	"net/http"
+	"os"
+	"time"
 
 	"final_project/database"
 	"final_project/models"
@@ -12,8 +14,44 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// uidFromCtx mengonversi c.Locals("user_id") ke uint
-// (nama berbeda agar tidak konflik dengan helper lain di package)
+func bookmarkOK(c *fiber.Ctx, status int, msg string, data any) error {
+	if data == nil {
+		return c.Status(status).JSON(fiber.Map{
+			"success": true,
+			"message": msg,
+		})
+	}
+	return c.Status(status).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+	})
+}
+
+func bookmarkListOK(c *fiber.Ctx, msg string, data any, page, limit int, total int64) error {
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"message": msg,
+		"data":    data,
+		"meta": fiber.Map{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+func bookmarkFail(c *fiber.Ctx, status int, msg string, err error) error {
+	resp := fiber.Map{
+		"success": false,
+		"message": msg,
+	}
+	if err != nil && os.Getenv("APP_ENV") != "production" {
+		resp["error"] = err.Error()
+	}
+	return c.Status(status).JSON(resp)
+}
+
 func uidFromCtx(c *fiber.Ctx) (uint, error) {
 	v := c.Locals("user_id")
 	if v == nil {
@@ -29,8 +67,6 @@ func uidFromCtx(c *fiber.Ctx) (uint, error) {
 	case uint:
 		return t, nil
 	case string:
-		// parse string if necessary
-		// fiber middleware sometimes puts numeric claims as string
 		var n int
 		_, err := fmt.Sscanf(t, "%d", &n)
 		if err != nil {
@@ -42,33 +78,30 @@ func uidFromCtx(c *fiber.Ctx) (uint, error) {
 	}
 }
 
-// AddBookmark - POST /bookmarks
-// Body JSON: { "novel_id": <uint> }
 func AddBookmark(c *fiber.Ctx) error {
 	var body struct {
 		NovelID uint `json:"novel_id"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "payload tidak valid"})
+		return bookmarkFail(c, http.StatusBadRequest, "Payload tidak valid", err)
 	}
 	if body.NovelID == 0 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "novel_id wajib diisi"})
+		return bookmarkFail(c, http.StatusBadRequest, "novel_id wajib diisi", nil)
 	}
 
 	uid, err := uidFromCtx(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return bookmarkFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
-	// Cek apakah bookmark sudah ada
 	var exist int64
 	if err := database.DB.Model(&models.Bookmark{}).
 		Where("user_id = ? AND novel_id = ?", uid, body.NovelID).
 		Count(&exist).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal memeriksa bookmark"})
+		return bookmarkFail(c, http.StatusInternalServerError, "Gagal memeriksa bookmark", err)
 	}
 	if exist > 0 {
-		return c.Status(http.StatusConflict).JSON(fiber.Map{"message": "novel sudah dibookmark"})
+		return bookmarkFail(c, http.StatusConflict, "Novel sudah dibookmark", nil)
 	}
 
 	b := models.Bookmark{
@@ -77,58 +110,48 @@ func AddBookmark(c *fiber.Ctx) error {
 		CreatedAt: time.Now(),
 	}
 	if err := database.DB.Create(&b).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menambahkan bookmark"})
+		return bookmarkFail(c, http.StatusInternalServerError, "Gagal menambahkan bookmark", err)
 	}
-	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "bookmark ditambahkan", "bookmark": b})
+	return bookmarkOK(c, http.StatusCreated, "Bookmark ditambahkan", b)
 }
 
-// RemoveBookmark - DELETE /bookmarks/:novel_id
-// Menghapus bookmark untuk user yang sedang login pada novel tertentu
 func RemoveBookmark(c *fiber.Ctx) error {
 	novelIDParam := c.Params("novel_id")
 	if novelIDParam == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "novel_id required"})
+		return bookmarkFail(c, http.StatusBadRequest, "novel_id wajib diisi", nil)
 	}
-	// parse manual to uint
+
 	var novelID uint
-	_, err := fmt.Sscanf(novelIDParam, "%d", &novelID)
-	if err != nil || novelID == 0 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "novel_id tidak valid"})
+	if _, err := fmt.Sscanf(novelIDParam, "%d", &novelID); err != nil || novelID == 0 {
+		return bookmarkFail(c, http.StatusBadRequest, "novel_id tidak valid", err)
 	}
 
 	uid, err := uidFromCtx(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return bookmarkFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
-	// hapus bookmark spesifik
 	res := database.DB.Where("user_id = ? AND novel_id = ?", uid, novelID).Delete(&models.Bookmark{})
 	if res.Error != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal menghapus bookmark"})
+		return bookmarkFail(c, http.StatusInternalServerError, "Gagal menghapus bookmark", res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return c.Status(http.StatusNotFound).JSON(fiber.Map{"message": "bookmark tidak ditemukan"})
+		return bookmarkFail(c, http.StatusNotFound, "Bookmark tidak ditemukan", nil)
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "bookmark dihapus"})
+	return bookmarkOK(c, http.StatusOK, "Bookmark dihapus", nil)
 }
 
-// ListBookmarks - GET /users/me/bookmarks
-// Mengembalikan daftar bookmark user (bersama data novel minimal)
 func ListBookmarks(c *fiber.Ctx) error {
 	uid, err := uidFromCtx(c)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
+		return bookmarkFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
 	var bookmarks []models.Bookmark
-	if err := database.DB.Where("user_id = ?", uid).Order("created_at DESC").Find(&bookmarks).Error; err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "gagal mengambil bookmark"})
-	}
-
-	// Ambil daftar novel terkait (batch) supaya response lebih informatif
-	novelIDs := make([]uint, 0, len(bookmarks))
-	for _, b := range bookmarks {
-		novelIDs = append(novelIDs, b.NovelID)
+	if err := database.DB.Where("user_id = ?", uid).
+		Order("created_at DESC").
+		Find(&bookmarks).Error; err != nil {
+		return bookmarkFail(c, http.StatusInternalServerError, "Gagal mengambil bookmark", err)
 	}
 
 	type NovelMini struct {
@@ -136,7 +159,10 @@ func ListBookmarks(c *fiber.Ctx) error {
 		Title string `json:"title"`
 		Slug  string `json:"slug"`
 	}
-
+	novelIDs := make([]uint, 0, len(bookmarks))
+	for _, b := range bookmarks {
+		novelIDs = append(novelIDs, b.NovelID)
+	}
 	novelsMap := map[uint]NovelMini{}
 	if len(novelIDs) > 0 {
 		var novels []models.Novel
@@ -147,17 +173,15 @@ func ListBookmarks(c *fiber.Ctx) error {
 		}
 	}
 
-	// compose response
 	resp := make([]fiber.Map, 0, len(bookmarks))
 	for _, b := range bookmarks {
-		item := fiber.Map{
+		resp = append(resp, fiber.Map{
 			"id":         b.ID,
 			"novel_id":   b.NovelID,
 			"created_at": b.CreatedAt,
-			"novel":      novelsMap[b.NovelID], // jika kosong, akan berupa zero value
-		}
-		resp = append(resp, item)
+			"novel":      novelsMap[b.NovelID],
+		})
 	}
 
-	return c.Status(http.StatusOK).JSON(fiber.Map{"bookmarks": resp})
+	return bookmarkListOK(c, "Daftar bookmark", resp, 1, len(resp), int64(len(resp)))
 }
