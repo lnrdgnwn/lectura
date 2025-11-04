@@ -9,7 +9,6 @@ import (
 )
 
 func authRoutes(api fiber.Router) {
-	// Auth endpoints (public)
 	api.Post("/auth/register", controllers.Register)
 	api.Post("/auth/login", controllers.Login)
 	api.Post("/auth/refresh", controllers.RefreshToken)
