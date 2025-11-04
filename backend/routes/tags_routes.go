@@ -8,12 +8,10 @@ import (
 )
 
 func tagsRoutes(api fiber.Router) {
-	// public
 	api.Get("/tags", controllers.ListTags)
 	api.Get("/tags/:id", controllers.GetTag)
 
-	// admin-only tag management
-	api.Post("/tags", middlewares.AuthMiddleware(), controllers.CreateTag)
-	api.Put("/tags/:id", middlewares.AuthMiddleware(), controllers.UpdateTag)
-	api.Delete("/tags/:id", middlewares.AuthMiddleware(), controllers.DeleteTag)
+	api.Post("/tags", middlewares.AuthMiddleware(),middlewares.AdminMiddleware(), controllers.CreateTag)
+	api.Put("/tags/:id", middlewares.AuthMiddleware(),middlewares.AdminMiddleware(), controllers.UpdateTag)
+	api.Delete("/tags/:id", middlewares.AuthMiddleware(),middlewares.AdminMiddleware(), controllers.DeleteTag)
 }
