@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,45 +13,59 @@ import (
 	"final_project/utils"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"gorm.io/gorm"
 )
 
-// ----------------- helpers -----------------
-
-// ambil user id dari c.Locals("user_id")
-func getUserIDFromLocals(c *fiber.Ctx) (uint, error) {
-	v := c.Locals("user_id")
-	if v == nil {
-		return 0, fiber.ErrUnauthorized
+func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
+	enc := c.Cookies("access_token", "")
+	if enc == "" {
+		return 0, "", fiber.ErrUnauthorized
 	}
-	switch t := v.(type) {
-	case float64:
-		return uint(t), nil
-	case int:
-		return uint(t), nil
-	case int64:
-		return uint(t), nil
-	case uint:
-		return t, nil
-	case string:
-		if n, err := strconv.Atoi(t); err == nil {
-			return uint(n), nil
+	// decrypt cookie -> plaintext JWT
+	tokenStr, err := utils.Decrypt(enc)
+	if err != nil || strings.TrimSpace(tokenStr) == "" {
+		return 0, "", fiber.ErrUnauthorized
+	}
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return 0, "", fiber.ErrUnauthorized
+	}
+	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fiber.ErrUnauthorized
 		}
+		return []byte(secret), nil
+	})
+	if err != nil || tok == nil || !tok.Valid {
+		return 0, "", fiber.ErrUnauthorized
 	}
-	return 0, fiber.ErrUnauthorized
+	claims, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, "", fiber.ErrUnauthorized
+	}
+
+	var uid uint
+	switch v := claims["id"].(type) {
+	case float64:
+		uid = uint(v)
+	case string:
+		if n, e := strconv.Atoi(v); e == nil {
+			uid = uint(n)
+		}
+	default:
+		return 0, "", fiber.ErrUnauthorized
+	}
+
+	role := ""
+	if r, ok := claims["role"].(string); ok {
+		role = r
+	}
+
+	return uid, strings.ToUpper(role), nil
 }
 
-// ambil role dari c.Locals("role")
-func getRoleFromLocals(c *fiber.Ctx) string {
-	v := c.Locals("role")
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
+/* ===================== helpers parsing kecil ===================== */
 
 // parse comma-separated "1,2,3" or JSON array "[1,2]" or single "1"
 func parseUintSliceFromString(s string) ([]uint, error) {
@@ -58,13 +73,11 @@ func parseUintSliceFromString(s string) ([]uint, error) {
 	if s == "" {
 		return []uint{}, nil
 	}
-	// try JSON array first
 	if strings.HasPrefix(s, "[") {
 		var arr []uint
 		if err := json.Unmarshal([]byte(s), &arr); err == nil {
 			return arr, nil
 		}
-		// fallthrough to manual parse if json unmarshal fails
 	}
 	parts := strings.Split(s, ",")
 	out := make([]uint, 0, len(parts))
@@ -91,25 +104,22 @@ func parseIDsFromForm(c *fiber.Ctx, keys ...string) ([]uint, bool, error) {
 			return arr, true, err
 		}
 	}
-	// also check repeated fields: genre_ids[] may appear multiple times in Postman as repeated keys.
-	// Fiber's FormValue returns only the first occurrence; but clients usually send comma-separated.
-	// If not present, return (nil,false,nil) meaning not provided.
 	return nil, false, nil
 }
 
-// ----------------- handlers -----------------
+/* ===================== handlers ===================== */
 
-// Get all novels (simple)
+// Get all novels (public)
 func GetNovels(c *fiber.Ctx) error {
 	var novels []models.Novel
-	// preload both Genres and Tags (tags optional depending model)
-	if err := database.DB.Preload("Genres").Preload("Tags").Order("created_at DESC").Find(&novels).Error; err != nil {
+	if err := database.DB.Preload("Genres").Preload("Tags").
+		Order("created_at DESC").Find(&novels).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal mengambil novel"})
 	}
 	return c.Status(http.StatusOK).JSON(fiber.Map{"data": novels})
 }
 
-// Get single novel by id (params :id)
+// Get single novel by id (public)
 func GetNovel(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var novel models.Novel
@@ -122,13 +132,13 @@ func GetNovel(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{"data": novel})
 }
 
+// Create novel (author must be authenticated via cookie access_token)
 func PostNovel(c *fiber.Ctx) error {
-	uid, err := getUserIDFromLocals(c)
+	uid, _, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
 		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
 	}
 
-	// payload struct used for both JSON and form parsing
 	var payload struct {
 		Title    string  `json:"title"`
 		Slug     string  `json:"slug"`
@@ -141,13 +151,10 @@ func PostNovel(c *fiber.Ctx) error {
 
 	ct := c.Get("Content-Type")
 	if strings.Contains(ct, "application/json") || c.Is("json") {
-		// raw JSON
 		if err := c.BodyParser(&payload); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "Payload JSON tidak valid"})
 		}
 	} else {
-		// multipart/form-data or x-www-form-urlencoded
-		// form fields
 		payload.Title = c.FormValue("title")
 		payload.Slug = c.FormValue("slug")
 		if s := c.FormValue("synopsis"); s != "" {
@@ -159,38 +166,28 @@ func PostNovel(c *fiber.Ctx) error {
 		if st := c.FormValue("status"); st != "" {
 			payload.Status = &st
 		}
-
-		// parse genre_ids
 		if arr, present, perr := parseIDsFromForm(c, "genre_ids", "genre_ids[]"); perr != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "genre_ids tidak valid", "error": perr.Error()})
 		} else if present {
 			payload.GenreIDs = arr
 		}
-
-		// parse tag_ids
 		if arr, present, perr := parseIDsFromForm(c, "tag_ids", "tag_ids[]"); perr != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "tag_ids tidak valid", "error": perr.Error()})
 		} else if present {
 			payload.TagIDs = arr
 		}
-
-		// handle cover file upload (if provided) and override cover_url
 		if _, ferr := c.FormFile("cover_image"); ferr == nil {
 			if path, err := utils.SaveFile(c, "cover_image", "cover"); err == nil {
 				payload.CoverURL = &path
 			} else {
-				// non-fatal: return error so client knows upload failed
 				return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "gagal menyimpan cover", "error": err.Error()})
 			}
 		}
 	}
 
-	// basic validation
 	if strings.TrimSpace(payload.Title) == "" || strings.TrimSpace(payload.Slug) == "" {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "title dan slug wajib diisi"})
 	}
-
-	// validate genre limit (max 1)
 	if len(payload.GenreIDs) > 1 {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "hanya boleh memasukkan maksimal 1 genre"})
 	}
@@ -209,7 +206,6 @@ func PostNovel(c *fiber.Ctx) error {
 		n.Status = *payload.Status
 	}
 
-	// attach genre (single)
 	if len(payload.GenreIDs) == 1 {
 		var genre models.Genre
 		if err := database.DB.First(&genre, payload.GenreIDs[0]).Error; err == nil {
@@ -218,8 +214,6 @@ func PostNovel(c *fiber.Ctx) error {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "genre tidak ditemukan", "genre_id": payload.GenreIDs[0]})
 		}
 	}
-
-	// attach tags (many)
 	if len(payload.TagIDs) > 0 {
 		var tags []models.Tag
 		if err := database.DB.Where("id IN ?", payload.TagIDs).Find(&tags).Error; err == nil {
@@ -236,18 +230,15 @@ func PostNovel(c *fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal membuat novel", "error": err.Error()})
 	}
 	_ = database.DB.Preload("Genres").Preload("Tags").First(&n, n.ID)
-
 	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Novel dibuat", "novel": n})
 }
 
-// UpdateNovel supports both raw JSON and multipart/form-data (similar parsing behavior to PostNovel).
-// Uses pointers for GenreIDs/TagIDs so we can detect "not provided" vs "provided (possibly empty -> clear)"
+// Update novel (author sendiri atau ADMIN) — auth via cookie
 func UpdateNovel(c *fiber.Ctx) error {
-	uid, err := getUserIDFromLocals(c)
+	uid, role, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
 		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
 	}
-	role := strings.ToUpper(getRoleFromLocals(c))
 
 	id := c.Params("id")
 	var novel models.Novel
@@ -263,7 +254,6 @@ func UpdateNovel(c *fiber.Ctx) error {
 		return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "Tidak berwenang mengubah novel ini"})
 	}
 
-	// payload with pointer slices to detect presence
 	var payload struct {
 		Title      *string `json:"title"`
 		Synopsis   *string `json:"synopsis"`
@@ -279,7 +269,6 @@ func UpdateNovel(c *fiber.Ctx) error {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "Payload JSON tidak valid"})
 		}
 	} else {
-		// form-data: build payload selectively
 		if v := c.FormValue("title"); v != "" {
 			payload.Title = &v
 		}
@@ -292,21 +281,16 @@ func UpdateNovel(c *fiber.Ctx) error {
 		if v := c.FormValue("status"); v != "" {
 			payload.Status = &v
 		}
-
 		if arr, present, perr := parseIDsFromForm(c, "genre_ids", "genre_ids[]"); perr != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "genre_ids tidak valid", "error": perr.Error()})
 		} else if present {
-			// we want pointer type
 			payload.GenreIDs = &arr
 		}
-
 		if arr, present, perr := parseIDsFromForm(c, "tag_ids", "tag_ids[]"); perr != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "tag_ids tidak valid", "error": perr.Error()})
 		} else if present {
 			payload.TagIDs = &arr
 		}
-
-		// handle cover file upload (if provided) and override cover_url
 		if _, ferr := c.FormFile("cover_image"); ferr == nil {
 			if path, err := utils.SaveFile(c, "cover_image", "cover"); err == nil {
 				payload.CoverImage = &path
@@ -316,7 +300,6 @@ func UpdateNovel(c *fiber.Ctx) error {
 		}
 	}
 
-	// validate genre if provided
 	if payload.GenreIDs != nil && len(*payload.GenreIDs) > 1 {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"message": "hanya boleh memasukkan maksimal 1 genre"})
 	}
@@ -334,7 +317,7 @@ func UpdateNovel(c *fiber.Ctx) error {
 		novel.Status = *payload.Status
 	}
 
-	// update genre: if pointer is nil -> not provided; if provided but len==0 -> clear; else replace
+	// Genre
 	if payload.GenreIDs != nil {
 		if len(*payload.GenreIDs) == 0 {
 			_ = database.DB.Model(&novel).Association("Genres").Clear()
@@ -351,7 +334,7 @@ func UpdateNovel(c *fiber.Ctx) error {
 		}
 	}
 
-	// update tags: same semantics as genre but allow many
+	// Tags
 	if payload.TagIDs != nil {
 		if len(*payload.TagIDs) == 0 {
 			_ = database.DB.Model(&novel).Association("Tags").Clear()
@@ -377,13 +360,12 @@ func UpdateNovel(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "Novel diperbarui", "novel": novel})
 }
 
-// Delete novel — hanya author atau admin
+// Delete novel — author sendiri atau ADMIN — auth via cookie
 func DeleteNovel(c *fiber.Ctx) error {
-	uid, err := getUserIDFromLocals(c)
+	uid, role, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
 		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"message": "unauthorized"})
 	}
-	role := strings.ToUpper(getRoleFromLocals(c))
 
 	id := c.Params("id")
 	var novel models.Novel
@@ -394,7 +376,6 @@ func DeleteNovel(c *fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Gagal mengambil novel"})
 	}
 
-	// cek ownership atau admin
 	if novel.AuthorID != uid && role != "ADMIN" {
 		return c.Status(http.StatusForbidden).JSON(fiber.Map{"message": "Tidak berwenang menghapus novel ini"})
 	}
@@ -405,7 +386,7 @@ func DeleteNovel(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "Novel dihapus"})
 }
 
-// Simple list with search + pagination
+// Simple list with search + pagination (public)
 // GET /novels?q=kata&page=1&limit=20
 func SearchNovels(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
@@ -419,7 +400,7 @@ func SearchNovels(c *fiber.Ctx) error {
 	db := database.DB.Model(&models.Novel{}).Preload("Genres").Preload("Tags")
 	if q != "" {
 		like := "%" + q + "%"
-		db = db.Where("title LIKE ? OR synopsis LIKE ?", like, like)
+		db = db.Where("title LIKE ? OR slug LIKE ?", like, like)
 	}
 
 	var novels []models.Novel
