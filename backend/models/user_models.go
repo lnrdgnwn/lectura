@@ -10,8 +10,8 @@ type User struct {
 	Email          string         `gorm:"size:255;uniqueIndex;not null" json:"email"`
 	PasswordHash   string         `gorm:"size:255;not null" json:"-"`
 	Role           string         `gorm:"size:20;not null;default:'READER'" json:"role"`
-	ProfilePicture *string        `gorm:"size:512" json:"profile_picture,omitempty"`
+	ProfilePicture *string        `json:"profile_picture,omitempty" gorm:"default:'http://127.0.0.1:3000/assets/IMG/profile_picture/Cukup.jpg'"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
-	RefreshToken  []RefreshToken `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	RefreshToken   []RefreshToken `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 }
