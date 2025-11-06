@@ -107,6 +107,69 @@ func GetGenre(c *fiber.Ctx) error {
 	return genreok(c, http.StatusOK, "Genre berhasil diambil", g)
 }
 
+func GetHomeGenres(c *fiber.Ctx) error {
+	var genres []models.Genre
+	if err := database.DB.
+		Where("show_on_home = ?", true).
+		Order("name ASC").
+		Find(&genres).Error; err != nil {
+		return genrefail(c, http.StatusInternalServerError, "Gagal mengambil genre untuk halaman utama", err)
+	}
+
+	return genreok(c, http.StatusOK, "Daftar genre untuk halaman utama", genres)
+}
+
+func GenreShowByAdmin(c *fiber.Ctx) error {
+	var body struct {
+		GenreIDs []uint `json:"genre_ids"`
+	}
+
+	if err := c.BodyParser(&body); err != nil {
+		return genrefail(c, http.StatusBadRequest, "Payload tidak valid", err)
+	}
+	if len(body.GenreIDs) == 0 {
+		return genrefail(c, http.StatusBadRequest, "genre_ids wajib diisi (minimal 1 genre)", nil)
+	}
+
+	var count int64
+	if err := database.DB.Model(&models.Genre{}).
+		Where("id IN ?", body.GenreIDs).
+		Count(&count).Error; err != nil {
+		return genrefail(c, http.StatusInternalServerError, "Gagal memeriksa daftar genre", err)
+	}
+	if count != int64(len(body.GenreIDs)) {
+		return genrefail(c, http.StatusBadRequest, "Salah satu genre_id tidak ditemukan", nil)
+	}
+
+	tx := database.DB.Begin()
+
+	if err := tx.Model(&models.Genre{}).
+		Where("show_on_home = ?", true).
+		Update("show_on_home", false).Error; err != nil {
+		tx.Rollback()
+		return genrefail(c, http.StatusInternalServerError, "Gagal mereset daftar genre halaman utama", err)
+	}
+
+	if err := tx.Model(&models.Genre{}).
+		Where("id IN ?", body.GenreIDs).
+		Update("show_on_home", true).Error; err != nil {
+		tx.Rollback()
+		return genrefail(c, http.StatusInternalServerError, "Gagal mengatur genre halaman utama", err)
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return genrefail(c, http.StatusInternalServerError, "Gagal menyimpan perubahan genre halaman utama", err)
+	}
+
+	var genres []models.Genre
+	_ = database.DB.
+		Where("show_on_home = ?", true).
+		Order("name ASC").
+		Find(&genres).Error
+
+	return genreok(c, http.StatusOK, "Genre untuk halaman utama berhasil diperbarui", genres)
+}
+
 func CreateGenre(c *fiber.Ctx) error {
 	var payload struct {
 		Name string `json:"name"`
