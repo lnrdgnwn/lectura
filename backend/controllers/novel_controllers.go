@@ -61,14 +61,17 @@ func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
 	if enc == "" {
 		return 0, "", fiber.ErrUnauthorized
 	}
+
 	tokenStr, err := utils.Decrypt(enc)
 	if err != nil || strings.TrimSpace(tokenStr) == "" {
 		return 0, "", fiber.ErrUnauthorized
 	}
+
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		return 0, "", fiber.ErrUnauthorized
 	}
+
 	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fiber.ErrUnauthorized
@@ -78,6 +81,7 @@ func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
 	if err != nil || tok == nil || !tok.Valid {
 		return 0, "", fiber.ErrUnauthorized
 	}
+
 	claims, ok := tok.Claims.(jwt.MapClaims)
 	if !ok {
 		return 0, "", fiber.ErrUnauthorized
@@ -99,9 +103,20 @@ func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
 
 	role := ""
 	if r, ok := claims["role"].(string); ok {
-		role = r
+		role = strings.ToLower(r)
 	}
-	return uid, strings.ToLower(role), nil
+
+	return uid, role, nil
+}
+
+func normalizeNovelStatus(s string) (string, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "ongoing", "complete", "hiatus":
+		return s, true
+	default:
+		return "", false
+	}
 }
 
 func parseUintSliceFromString(s string) ([]uint, error) {
@@ -142,7 +157,7 @@ func parseIDsFromForm(c *fiber.Ctx, keys ...string) ([]uint, bool, error) {
 	return nil, false, nil
 }
 
-func GetNovels(c *fiber.Ctx) error {
+func GetNovel(c *fiber.Ctx) error {
 	var novels []models.Novel
 	if err := database.DB.Preload("Genres").Preload("Tags").
 		Order("created_at DESC").Find(&novels).Error; err != nil {
@@ -151,16 +166,46 @@ func GetNovels(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Daftar novel", novels)
 }
 
-func GetNovel(c *fiber.Ctx) error {
+func GetNovelByID(c *fiber.Ctx) error {
 	id := c.Params("id")
+
 	var novel models.Novel
-	if err := database.DB.Preload("Genres").Preload("Tags").First(&novel, id).Error; err != nil {
+	if err := database.DB.
+		Preload("Genres").
+		Preload("Tags").
+		First(&novel, id).Error; err != nil {
+
 		if err == gorm.ErrRecordNotFound {
 			return novelFail(c, http.StatusNotFound, "Novel tidak ditemukan", nil)
 		}
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel", err)
 	}
-	return novelOK(c, http.StatusOK, "Detail novel", novel)
+
+	uid, role, _ := getAuthFromAccessCookieNovel(c) 
+
+	var chapters []models.Chapter
+
+	chQuery := database.DB.
+		Model(&models.Chapter{}).
+		Where("novel_id = ?", novel.ID).
+		Order("order_no ASC")
+
+	if role == "admin" || uid == novel.AuthorID {
+		if err := chQuery.Find(&chapters).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil daftar chapter", err)
+		}
+	} else {
+		if err := chQuery.
+			Where("published_at IS NOT NULL AND published_at <= ?", time.Now()).
+			Find(&chapters).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil daftar chapter terbit", err)
+		}
+	}
+
+	return novelOK(c, http.StatusOK, "Detail novel", fiber.Map{
+		"novel":    novel,
+		"chapters": chapters,
+	})
 }
 
 func GetMyNovels(c *fiber.Ctx) error {
@@ -189,7 +234,11 @@ func GetMyNovels(c *fiber.Ctx) error {
 	}
 
 	if status != "" {
-		countQB = countQB.Where("status = ?", status)
+		if ns, ok := normalizeNovelStatus(status); ok {
+			countQB = countQB.Where("status = ?", ns)
+		} else {
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+		}
 	}
 
 	var total int64
@@ -208,7 +257,8 @@ func GetMyNovels(c *fiber.Ctx) error {
 		dataQB = dataQB.Where("title LIKE ? OR slug LIKE ?", like, like)
 	}
 	if status != "" {
-		dataQB = dataQB.Where("status = ?", status)
+		ns, _ := normalizeNovelStatus(status)
+		dataQB = dataQB.Where("status = ?", ns)
 	}
 
 	var novels []models.Novel
@@ -282,39 +332,43 @@ func PostNovel(c *fiber.Ctx) error {
 		return novelFail(c, http.StatusBadRequest, "hanya boleh memasukkan maksimal 1 genre", nil)
 	}
 
+	status := "ongoing"
+	if payload.Status != nil && strings.TrimSpace(*payload.Status) != "" {
+		if ns, ok := normalizeNovelStatus(*payload.Status); ok {
+			status = ns
+		} else {
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+		}
+	}
+
 	n := models.Novel{
 		AuthorID:   uid,
 		Title:      strings.TrimSpace(payload.Title),
 		Slug:       strings.TrimSpace(payload.Slug),
 		Synopsis:   payload.Synopsis,
 		CoverImage: payload.CoverURL,
-		Status:     "DRAFT",
+		Status:     status,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
-	}
-	if payload.Status != nil && *payload.Status != "" {
-		n.Status = *payload.Status
 	}
 
 	if len(payload.GenreIDs) == 1 {
 		var genre models.Genre
-		if err := database.DB.First(&genre, payload.GenreIDs[0]).Error; err == nil {
-			n.Genres = []models.Genre{genre}
-		} else {
+		if err := database.DB.First(&genre, payload.GenreIDs[0]).Error; err != nil {
 			return novelFail(c, http.StatusBadRequest, "genre tidak ditemukan", err)
 		}
+		n.Genres = []models.Genre{genre}
 	}
 
 	if len(payload.TagIDs) > 0 {
 		var tags []models.Tag
-		if err := database.DB.Where("id IN ?", payload.TagIDs).Find(&tags).Error; err == nil {
-			if len(tags) != len(payload.TagIDs) {
-				return novelFail(c, http.StatusBadRequest, "salah satu tag_id tidak ditemukan", nil)
-			}
-			n.Tags = tags
-		} else {
+		if err := database.DB.Where("id IN ?", payload.TagIDs).Find(&tags).Error; err != nil {
 			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil tags", err)
 		}
+		if len(tags) != len(payload.TagIDs) {
+			return novelFail(c, http.StatusBadRequest, "salah satu tag_id tidak ditemukan", nil)
+		}
+		n.Tags = tags
 	}
 
 	if err := database.DB.Create(&n).Error; err != nil {
@@ -348,7 +402,7 @@ func UpdateNovel(c *fiber.Ctx) error {
 		Title      *string `json:"title"`
 		Synopsis   *string `json:"synopsis"`
 		CoverImage *string `json:"cover_image"`
-		Status     *string `json:"status"`
+		Status     *string `json:"status"`   
 		GenreIDs   *[]uint `json:"genre_ids"`
 		TagIDs     *[]uint `json:"tag_ids"`
 	}
@@ -403,8 +457,16 @@ func UpdateNovel(c *fiber.Ctx) error {
 	if payload.CoverImage != nil {
 		novel.CoverImage = payload.CoverImage
 	}
-	if payload.Status != nil && *payload.Status != "" {
-		novel.Status = *payload.Status
+	if payload.Status != nil {
+		s := strings.TrimSpace(*payload.Status)
+		if s == "" {
+			return novelFail(c, http.StatusBadRequest, "Status tidak boleh kosong", nil)
+		}
+		if ns, ok := normalizeNovelStatus(s); ok {
+			novel.Status = ns
+		} else {
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+		}
 	}
 
 	if payload.GenreIDs != nil {
@@ -412,14 +474,13 @@ func UpdateNovel(c *fiber.Ctx) error {
 			_ = database.DB.Model(&novel).Association("Genres").Clear()
 		} else {
 			var genres []models.Genre
-			if err := database.DB.Where("id IN ?", *payload.GenreIDs).Find(&genres).Error; err == nil {
-				if len(genres) != len(*payload.GenreIDs) {
-					return novelFail(c, http.StatusBadRequest, "salah satu genre_id tidak ditemukan", nil)
-				}
-				_ = database.DB.Model(&novel).Association("Genres").Replace(&genres)
-			} else {
+			if err := database.DB.Where("id IN ?", *payload.GenreIDs).Find(&genres).Error; err != nil {
 				return novelFail(c, http.StatusInternalServerError, "Gagal mengambil genre", err)
 			}
+			if len(genres) != len(*payload.GenreIDs) {
+				return novelFail(c, http.StatusBadRequest, "salah satu genre_id tidak ditemukan", nil)
+			}
+			_ = database.DB.Model(&novel).Association("Genres").Replace(&genres)
 		}
 	}
 
@@ -428,14 +489,13 @@ func UpdateNovel(c *fiber.Ctx) error {
 			_ = database.DB.Model(&novel).Association("Tags").Clear()
 		} else {
 			var tags []models.Tag
-			if err := database.DB.Where("id IN ?", *payload.TagIDs).Find(&tags).Error; err == nil {
-				if len(tags) != len(*payload.TagIDs) {
-					return novelFail(c, http.StatusBadRequest, "salah satu tag_id tidak ditemukan", nil)
-				}
-				_ = database.DB.Model(&novel).Association("Tags").Replace(&tags)
-			} else {
+			if err := database.DB.Where("id IN ?", *payload.TagIDs).Find(&tags).Error; err != nil {
 				return novelFail(c, http.StatusInternalServerError, "Gagal mengambil tags", err)
 			}
+			if len(tags) != len(*payload.TagIDs) {
+				return novelFail(c, http.StatusBadRequest, "salah satu tag_id tidak ditemukan", nil)
+			}
+			_ = database.DB.Model(&novel).Association("Tags").Replace(&tags)
 		}
 	}
 
@@ -503,7 +563,11 @@ func SearchNovels(c *fiber.Ctx) error {
 	}
 
 	var novels []models.Novel
-	if err := dataQB.Order("created_at DESC").Limit(limit).Offset(offset).Find(&novels).Error; err != nil {
+	if err := dataQB.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&novels).Error; err != nil {
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel", err)
 	}
 
