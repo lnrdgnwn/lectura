@@ -94,7 +94,7 @@ func Register(c *fiber.Ctx) error {
 		Username:     body.Username,
 		Email:        body.Email,
 		PasswordHash: string(pwHash),
-		Role:         "READER",
+		Role:         "reader",
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
