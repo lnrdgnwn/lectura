@@ -10,6 +10,7 @@ import (
 func novelRoutes(api fiber.Router) {
 	api.Get("/novels", controllers.GetNovels)
 	api.Get("/novels/search", controllers.SearchNovels)
+	api.Get("/novels/me", middlewares.AuthMiddleware(), controllers.GetMyNovels)
 	api.Get("/novels/:id", controllers.GetNovel)
 	api.Get("/novels/:novel_id/chapters", controllers.ListChapters)
 

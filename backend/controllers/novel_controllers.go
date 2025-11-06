@@ -163,6 +163,66 @@ func GetNovel(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Detail novel", novel)
 }
 
+func GetMyNovels(c *fiber.Ctx) error {
+	uid, _, err := getAuthFromAccessCookieNovel(c)
+	if err != nil {
+		return novelFail(c, http.StatusUnauthorized, "Unauthorized", err)
+	}
+
+	q := strings.TrimSpace(c.Query("q", ""))
+	status := strings.TrimSpace(c.Query("status", ""))
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	countQB := database.DB.Model(&models.Novel{}).Where("author_id = ?", uid)
+
+	if q != "" {
+		like := "%" + q + "%"
+		countQB = countQB.Where("title LIKE ? OR slug LIKE ?", like, like)
+	}
+
+	if status != "" {
+		countQB = countQB.Where("status = ?", status)
+	}
+
+	var total int64
+	if err := countQB.Count(&total).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal menghitung total novel milik user", err)
+	}
+
+	dataQB := database.DB.
+		Model(&models.Novel{}).
+		Where("author_id = ?", uid).
+		Preload("Genres").
+		Preload("Tags")
+
+	if q != "" {
+		like := "%" + q + "%"
+		dataQB = dataQB.Where("title LIKE ? OR slug LIKE ?", like, like)
+	}
+	if status != "" {
+		dataQB = dataQB.Where("status = ?", status)
+	}
+
+	var novels []models.Novel
+	if err := dataQB.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&novels).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel milik user", err)
+	}
+
+	return novelListOK(c, "Daftar novel milik user", novels, page, limit, total)
+}
+
 func PostNovel(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
