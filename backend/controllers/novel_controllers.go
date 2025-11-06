@@ -101,7 +101,7 @@ func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
 	if r, ok := claims["role"].(string); ok {
 		role = r
 	}
-	return uid, strings.ToUpper(role), nil
+	return uid, strings.ToLower(role), nil
 }
 
 func parseUintSliceFromString(s string) ([]uint, error) {
