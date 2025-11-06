@@ -14,7 +14,6 @@ type Novel struct {
 	Status     string    `gorm:"size:20;default:'DRAFT'" json:"status"`
 	Genres     []Genre   `gorm:"many2many:novel_genres;constraint:OnDelete:CASCADE;" json:"genres,omitempty"`
 	Tags       []Tag     `gorm:"many2many:novel_tags;constraint:OnDelete:CASCADE;" json:"tags,omitempty"`
-	ShowOnHome bool      `gorm:"default:false" json:"show_on_home"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

@@ -223,26 +223,6 @@ func GetMyNovels(c *fiber.Ctx) error {
 	return novelListOK(c, "Daftar novel milik user", novels, page, limit, total)
 }
 
-func GetHomeNovels(c *fiber.Ctx) error {
-    limit, _ := strconv.Atoi(c.Query("limit", "20"))
-    if limit <= 0 || limit > 100 {
-        limit = 20
-    }
-
-    var novels []models.Novel
-    if err := database.DB.
-        Where("show_on_home = ?", true).
-        Preload("Genres").
-        Preload("Tags").
-        Order("created_at DESC").
-        Limit(limit).
-        Find(&novels).Error; err != nil {
-        return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel homepage", err)
-    }
-
-    return novelOK(c, http.StatusOK, "Daftar novel homepage", novels)
-}
-
 func PostNovel(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
@@ -343,52 +323,6 @@ func PostNovel(c *fiber.Ctx) error {
 	_ = database.DB.Preload("Genres").Preload("Tags").First(&n, n.ID)
 
 	return novelOK(c, http.StatusCreated, "Novel dibuat", n)
-}
-
-func SetHomeNovels(c *fiber.Ctx) error {
-    _, role, err := getAuthFromAccessCookieNovel(c)
-    if err != nil {
-        return novelFail(c, http.StatusUnauthorized, "Unauthorized", err)
-    }
-    if role != "admin" {
-        return novelFail(c, http.StatusForbidden, "Hanya admin yang boleh mengatur novel homepage", nil)
-    }
-
-    var body struct {
-        NovelIDs []uint `json:"novel_ids"`
-    }
-    if err := c.BodyParser(&body); err != nil {
-        return novelFail(c, http.StatusBadRequest, "Payload tidak valid", err)
-    }
-
-    tx := database.DB.Begin()
-    if tx.Error != nil {
-        return novelFail(c, http.StatusInternalServerError, "Gagal memulai transaksi", tx.Error)
-    }
-
-    if err := tx.Model(&models.Novel{}).
-        Where("show_on_home = ?", true).
-        Update("show_on_home", false).Error; err != nil {
-        tx.Rollback()
-        return novelFail(c, http.StatusInternalServerError, "Gagal mereset daftar novel homepage", err)
-    }
-
-    if len(body.NovelIDs) > 0 {
-        if err := tx.Model(&models.Novel{}).
-            Where("id IN ?", body.NovelIDs).
-            Update("show_on_home", true).Error; err != nil {
-            tx.Rollback()
-            return novelFail(c, http.StatusInternalServerError, "Gagal menetapkan novel homepage", err)
-        }
-    }
-
-    if err := tx.Commit().Error; err != nil {
-        return novelFail(c, http.StatusInternalServerError, "Gagal menyimpan perubahan novel homepage", err)
-    }
-
-    return novelOK(c, http.StatusOK, "Daftar novel homepage berhasil diperbarui", fiber.Map{
-        "novel_ids": body.NovelIDs,
-    })
 }
 
 func UpdateNovel(c *fiber.Ctx) error {

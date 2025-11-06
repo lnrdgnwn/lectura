@@ -9,7 +9,6 @@ import (
 
 func novelRoutes(api fiber.Router) {
 	api.Get("/novels", controllers.GetNovels)
-	api.Get("/novels/home", controllers.GetHomeNovels)
 	api.Get("/novels/search", controllers.SearchNovels)
 	api.Get("/novels/me", middlewares.AuthMiddleware(), controllers.GetMyNovels)
 	api.Get("/novels/:id", controllers.GetNovel)
@@ -18,5 +17,4 @@ func novelRoutes(api fiber.Router) {
 	api.Post("/novels", middlewares.AuthMiddleware(), controllers.PostNovel)
 	api.Put("/novels/:id", middlewares.AuthMiddleware(), controllers.UpdateNovel)
 	api.Delete("/novels/:id", middlewares.AuthMiddleware(), controllers.DeleteNovel)
-	api.Put("/admin/novels/home", middlewares.AuthMiddleware(), middlewares.AdminMiddleware(), controllers.SetHomeNovels)
 }
