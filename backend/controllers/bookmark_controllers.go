@@ -1,4 +1,3 @@
-// controllers/bookmark_controllers.go
 package controllers
 
 import (

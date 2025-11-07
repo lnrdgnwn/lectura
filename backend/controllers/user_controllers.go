@@ -1,4 +1,3 @@
-// controllers/user_controllers.go
 package controllers
 
 import (

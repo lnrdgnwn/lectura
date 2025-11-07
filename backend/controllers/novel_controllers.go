@@ -1,4 +1,3 @@
-// controllers/novel_controllers.go
 package controllers
 
 import (
@@ -168,7 +167,6 @@ func GetNovel(c *fiber.Ctx) error {
 
 func GetNovelByID(c *fiber.Ctx) error {
 	id := c.Params("id")
-
 	var novel models.Novel
 	if err := database.DB.
 		Preload("Genres").
@@ -181,7 +179,30 @@ func GetNovelByID(c *fiber.Ctx) error {
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel", err)
 	}
 
-	uid, role, _ := getAuthFromAccessCookieNovel(c) 
+	var author models.User
+	if err := database.DB.
+		Select("id, username, profile_picture").
+		First(&author, novel.AuthorID).Error; err != nil {
+
+		if err == gorm.ErrRecordNotFound {
+			return novelFail(c, http.StatusInternalServerError, "Data author untuk novel ini tidak ditemukan", nil)
+		}
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data author", err)
+	}
+
+	type AuthorMini struct {
+		ID             uint    `json:"id"`
+		Username       string  `json:"username"`
+		ProfilePicture *string `json:"profile_picture"`
+	}
+
+	authorMini := AuthorMini{
+		ID:             author.ID,
+		Username:       author.Username,
+		ProfilePicture: author.ProfilePicture,
+	}
+
+	uid, role, _ := getAuthFromAccessCookieNovel(c)
 
 	var chapters []models.Chapter
 
@@ -202,10 +223,96 @@ func GetNovelByID(c *fiber.Ctx) error {
 		}
 	}
 
-	return novelOK(c, http.StatusOK, "Detail novel", fiber.Map{
-		"novel":    novel,
-		"chapters": chapters,
-	})
+	type NovelDetailResponse struct {
+		ID           uint              `json:"id"`
+		Title        string            `json:"title"`
+		Slug         string            `json:"slug"`
+		Synopsis     *string           `json:"synopsis"`
+		CoverImage   *string           `json:"cover_image"`
+		Status       string            `json:"status"`
+		Author       AuthorMini        `json:"author"`
+		Genres       []models.Genre    `json:"genres"`
+		Tags         []models.Tag      `json:"tags"`
+		Chapters     []models.Chapter  `json:"chapters"`
+		CreatedAt    time.Time         `json:"created_at"`
+		UpdatedAt    time.Time         `json:"updated_at"`
+	}
+
+	resp := NovelDetailResponse{
+		ID:         novel.ID,
+		Title:      novel.Title,
+		Slug:       novel.Slug,
+		Synopsis:   novel.Synopsis,
+		CoverImage: novel.CoverImage,
+		Status:     novel.Status,
+		Author:     authorMini,
+		Genres:     novel.Genres,
+		Tags:       novel.Tags,
+		Chapters:   chapters,
+		CreatedAt:  novel.CreatedAt,
+		UpdatedAt:  novel.UpdatedAt,
+	}
+
+	return novelOK(c, http.StatusOK, "Detail novel", resp)
+}
+
+func GetNovelByGenreID(c *fiber.Ctx) error {
+	gidStr := c.Params("genre_id")
+	if gidStr == "" {
+		gidStr = c.Params("id")
+	}
+	if gidStr == "" {
+		gidStr = c.Query("genre_id", "")
+	}
+	if strings.TrimSpace(gidStr) == "" {
+		return novelFail(c, http.StatusBadRequest, "genre_id wajib diisi", nil)
+	}
+
+	genreIDInt, err := strconv.Atoi(gidStr)
+	if err != nil || genreIDInt <= 0 {
+		return novelFail(c, http.StatusBadRequest, "genre_id tidak valid", err)
+	}
+	genreID := uint(genreIDInt)
+
+	var g models.Genre
+	if err := database.DB.First(&g, genreID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return novelFail(c, http.StatusNotFound, "Genre tidak ditemukan", nil)
+		}
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data genre", err)
+	}
+
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	base := database.DB.Model(&models.Novel{}).
+		Joins("JOIN novel_genres ng ON ng.novel_id = novels.id").
+		Where("ng.genre_id = ?", genreID)
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal menghitung total novel untuk genre ini", err)
+	}
+
+	var novels []models.Novel
+	if err := base.
+		Preload("Genres").
+		Preload("Tags").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&novels).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel untuk genre ini", err)
+	}
+
+	return novelListOK(c, "Daftar novel berdasarkan genre", novels, page, limit, total)
 }
 
 func GetMyNovels(c *fiber.Ctx) error {
