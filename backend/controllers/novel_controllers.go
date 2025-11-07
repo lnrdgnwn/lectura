@@ -374,18 +374,18 @@ func GetNovelByID(c *fiber.Ctx) error {
 	}
 
 	type NovelDetailResponse struct {
-		ID           uint              `json:"id"`
-		Title        string            `json:"title"`
-		Slug         string            `json:"slug"`
-		Synopsis     *string           `json:"synopsis"`
-		CoverImage   *string           `json:"cover_image"`
-		Status       string            `json:"status"`
-		Author       AuthorMini        `json:"author"`
-		Genres       []models.Genre    `json:"genres"`
-		Tags         []models.Tag      `json:"tags"`
-		Chapters     []models.Chapter  `json:"chapters"`
-		CreatedAt    time.Time         `json:"created_at"`
-		UpdatedAt    time.Time         `json:"updated_at"`
+		ID         uint             `json:"id"`
+		Title      string           `json:"title"`
+		Slug       string           `json:"slug"`
+		Synopsis   *string          `json:"synopsis"`
+		CoverImage *string          `json:"cover_image"`
+		Status     string           `json:"status"`
+		Author     AuthorMini       `json:"author"`
+		Genres     []models.Genre   `json:"genres"`
+		Tags       []models.Tag     `json:"tags"`
+		Chapters   []models.Chapter `json:"chapters"`
+		CreatedAt  time.Time        `json:"created_at"`
+		UpdatedAt  time.Time        `json:"updated_at"`
 	}
 
 	resp := NovelDetailResponse{
@@ -659,7 +659,7 @@ func UpdateNovel(c *fiber.Ctx) error {
 		Title      *string `json:"title"`
 		Synopsis   *string `json:"synopsis"`
 		CoverImage *string `json:"cover_image"`
-		Status     *string `json:"status"`   
+		Status     *string `json:"status"`
 		GenreIDs   *[]uint `json:"genre_ids"`
 		TagIDs     *[]uint `json:"tag_ids"`
 	}
