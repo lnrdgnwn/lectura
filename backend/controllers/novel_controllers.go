@@ -813,7 +813,11 @@ func SearchNovels(c *fiber.Ctx) error {
 		return novelFail(c, http.StatusInternalServerError, "Gagal menghitung total novel", err)
 	}
 
-	dataQB := database.DB.Model(&models.Novel{}).Preload("Genres").Preload("Tags")
+	dataQB := database.DB.
+		Model(&models.Novel{}).
+		Preload("Genres").
+		Preload("Tags")
+
 	if q != "" {
 		like := "%" + q + "%"
 		dataQB = dataQB.Where("title LIKE ? OR slug LIKE ?", like, like)
@@ -828,5 +832,151 @@ func SearchNovels(c *fiber.Ctx) error {
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel", err)
 	}
 
-	return novelListOK(c, "Hasil pencarian novel", novels, page, limit, total)
+	if len(novels) == 0 {
+		return novelListOK(c, "Hasil pencarian novel", []any{}, page, limit, total)
+	}
+
+	uid, role, _ := getAuthFromAccessCookieNovel(c)
+
+	authorIDSet := make(map[uint]struct{})
+	novelIDSet := make(map[uint]struct{})
+	ownedNovelIDSet := make(map[uint]struct{})
+
+	for _, n := range novels {
+		if n.AuthorID != 0 {
+			authorIDSet[n.AuthorID] = struct{}{}
+		}
+		novelIDSet[n.ID] = struct{}{}
+		if uid != 0 && n.AuthorID == uid {
+			ownedNovelIDSet[n.ID] = struct{}{}
+		}
+	}
+
+	authorIDs := make([]uint, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+
+	novelIDs := make([]uint, 0, len(novelIDSet))
+	for id := range novelIDSet {
+		novelIDs = append(novelIDs, id)
+	}
+
+	ownedNovelIDs := make([]uint, 0, len(ownedNovelIDSet))
+	for id := range ownedNovelIDSet {
+		ownedNovelIDs = append(ownedNovelIDs, id)
+	}
+
+	type AuthorMini struct {
+		ID             uint    `json:"id"`
+		Username       string  `json:"username"`
+		ProfilePicture *string `json:"profile_picture"`
+	}
+
+	authorsMap := make(map[uint]AuthorMini)
+
+	if len(authorIDs) > 0 {
+		var users []models.User
+		if err := database.DB.
+			Select("id, username, profile_picture").
+			Where("id IN ?", authorIDs).
+			Find(&users).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data author", err)
+		}
+
+		for _, u := range users {
+			authorsMap[u.ID] = AuthorMini{
+				ID:             u.ID,
+				Username:       u.Username,
+				ProfilePicture: u.ProfilePicture,
+			}
+		}
+	}
+
+	chaptersByNovel := make(map[uint][]models.Chapter)
+
+	if role == "admin" {
+		var chs []models.Chapter
+		if err := database.DB.
+			Where("novel_id IN ?", novelIDs).
+			Order("novel_id ASC, order_no ASC").
+			Find(&chs).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil chapters", err)
+		}
+		for _, ch := range chs {
+			chaptersByNovel[ch.NovelID] = append(chaptersByNovel[ch.NovelID], ch)
+		}
+	} else {
+		now := time.Now()
+
+		var published []models.Chapter
+		if err := database.DB.
+			Where("novel_id IN ? AND published_at IS NOT NULL AND published_at <= ?", novelIDs, now).
+			Order("novel_id ASC, order_no ASC").
+			Find(&published).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil chapters terbit", err)
+		}
+		for _, ch := range published {
+			chaptersByNovel[ch.NovelID] = append(chaptersByNovel[ch.NovelID], ch)
+		}
+
+		if uid != 0 && len(ownedNovelIDs) > 0 {
+			var ownedCh []models.Chapter
+			if err := database.DB.
+				Where("novel_id IN ?", ownedNovelIDs).
+				Order("novel_id ASC, order_no ASC").
+				Find(&ownedCh).Error; err != nil {
+				return novelFail(c, http.StatusInternalServerError, "Gagal mengambil chapters milik author", err)
+			}
+
+			tmp := make(map[uint][]models.Chapter)
+			for _, ch := range ownedCh {
+				tmp[ch.NovelID] = append(tmp[ch.NovelID], ch)
+			}
+			for nid, list := range tmp {
+				chaptersByNovel[nid] = list
+			}
+		}
+	}
+
+	type NovelItem struct {
+		ID         uint             `json:"id"`
+		Title      string           `json:"title"`
+		Slug       string           `json:"slug"`
+		Synopsis   *string          `json:"synopsis"`
+		CoverImage *string          `json:"cover_image"`
+		Status     string           `json:"status"`
+		Author     *AuthorMini      `json:"author"`
+		Genres     []models.Genre   `json:"genres"`
+		Tags       []models.Tag     `json:"tags"`
+		Chapters   []models.Chapter `json:"chapters"`
+		CreatedAt  time.Time        `json:"created_at"`
+		UpdatedAt  time.Time        `json:"updated_at"`
+	}
+
+	resp := make([]NovelItem, 0, len(novels))
+	for _, n := range novels {
+		var authorPtr *AuthorMini
+		if am, ok := authorsMap[n.AuthorID]; ok {
+			a := am
+			authorPtr = &a
+		}
+
+		resp = append(resp, NovelItem{
+			ID:         n.ID,
+			Title:      n.Title,
+			Slug:       n.Slug,
+			Synopsis:   n.Synopsis,
+			CoverImage: n.CoverImage,
+			Status:     n.Status,
+			Author:     authorPtr,
+			Genres:     n.Genres,
+			Tags:       n.Tags,
+			Chapters:   chaptersByNovel[n.ID],
+			CreatedAt:  n.CreatedAt,
+			UpdatedAt:  n.UpdatedAt,
+		})
+	}
+
+	return novelListOK(c, "Hasil pencarian novel", resp, page, limit, total)
 }
