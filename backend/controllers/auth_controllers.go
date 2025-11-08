@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Response helpers
 func authok(c *fiber.Ctx, status int, msg string, data any) error {
 	if data == nil {
 		return c.Status(status).JSON(fiber.Map{
@@ -59,6 +60,18 @@ func getUserAgentPtr(c *fiber.Ctx) *string {
 	return &ua
 }
 
+// Register godoc
+// @Summary      Register user baru
+// @Description  Membuat akun baru dengan username, email, dan password. Role default: user.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      models.RegisterRequest  true  "Data registrasi"
+// @Success      201   {object}  map[string]interface{}  "User berhasil terdaftar"
+// @Failure      400   {object}  map[string]interface{}
+// @Failure      409   {object}  map[string]interface{}
+// @Failure      500   {object}  map[string]interface{}
+// @Router       /auth/register [post]
 func Register(c *fiber.Ctx) error {
 	var body struct {
 		Username string `json:"username"`
@@ -105,6 +118,18 @@ func Register(c *fiber.Ctx) error {
 	return authok(c, fiber.StatusCreated, "User berhasil terdaftar", fiber.Map{"user": u})
 }
 
+// Login godoc
+// @Summary      Login
+// @Description  Login dengan email & password. Token dikirim via cookie HttpOnly.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      models.LoginRequest  true  "Data login"
+// @Success      200   {object}  map[string]interface{}  "Login sukses"
+// @Failure      400   {object}  map[string]interface{}
+// @Failure      401   {object}  map[string]interface{}
+// @Failure      500   {object}  map[string]interface{}
+// @Router       /auth/login [post]
 func Login(c *fiber.Ctx) error {
 	var body struct {
 		Email    string `json:"email"`
@@ -149,7 +174,7 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	if database.Rdb != nil {
-		_ = database.Rdb.Del(context.Background(), fmt.Sprintf("refresh:%d", rt.UserID)).Err() // single-active
+		_ = database.Rdb.Del(context.Background(), fmt.Sprintf("refresh:%d", rt.UserID)).Err()
 		if err := utils.SaveRefreshToken(c, rt); err != nil {
 			return authfail(c, fiber.StatusInternalServerError, "Gagal menyimpan refresh token (redis)", err)
 		}
@@ -163,6 +188,15 @@ func Login(c *fiber.Ctx) error {
 	return authok(c, fiber.StatusOK, "Login sukses", nil)
 }
 
+// RefreshToken godoc
+// @Summary      Refresh access token
+// @Description  Menggunakan refresh_token (cookie) untuk membuat access_token baru (dan rotate refresh_token).
+// @Tags         Auth
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "Refresh token sukses, token baru diset di cookie"
+// @Failure      401  {object}  map[string]interface{}  "Refresh token tidak tersedia/invalid/kedaluwarsa"
+// @Failure      500  {object}  map[string]interface{}  "Gagal membuat/simpan token baru"
+// @Router       /auth/refresh [post]
 func RefreshToken(c *fiber.Ctx) error {
 	rdbCtx := context.Background()
 
@@ -254,6 +288,15 @@ func RefreshToken(c *fiber.Ctx) error {
 	return authok(c, fiber.StatusOK, "Refresh token sukses", nil)
 }
 
+// Logout godoc
+// @Summary      Logout
+// @Description  Logout user. Menghapus refresh token dari Redis/DB dan mengosongkan cookie.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      models.LogoutRequest  false  "Opsional jika tidak pakai cookie"
+// @Success      200   {object}  map[string]interface{}  "Logout sukses"
+// @Router       /auth/logout [post]
 func Logout(c *fiber.Ctx) error {
 	rtEnc := c.Cookies("refresh_token", "")
 	if rtEnc == "" {
