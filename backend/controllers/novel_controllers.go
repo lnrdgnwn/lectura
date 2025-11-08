@@ -111,7 +111,7 @@ func getAuthFromAccessCookieNovel(c *fiber.Ctx) (uint, string, error) {
 func normalizeNovelStatus(s string) (string, bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
-	case "ongoing", "complete", "hiatus":
+	case "ongoing", "completed", "hiatus":
 		return s, true
 	default:
 		return "", false
@@ -600,7 +600,7 @@ func GetMyNovels(c *fiber.Ctx) error {
 		if ns, ok := normalizeNovelStatus(status); ok {
 			countQB = countQB.Where("status = ?", ns)
 		} else {
-			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, completed, hiatus)", nil)
 		}
 	}
 
@@ -786,7 +786,7 @@ func PostNovel(c *fiber.Ctx) error {
 		if ns, ok := normalizeNovelStatus(*payload.Status); ok {
 			status = ns
 		} else {
-			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, completed, hiatus)", nil)
 		}
 	}
 
@@ -914,7 +914,7 @@ func UpdateNovel(c *fiber.Ctx) error {
 		if ns, ok := normalizeNovelStatus(s); ok {
 			novel.Status = ns
 		} else {
-			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, complete, hiatus)", nil)
+			return novelFail(c, http.StatusBadRequest, "Status tidak valid (gunakan: ongoing, completed, hiatus)", nil)
 		}
 	}
 
