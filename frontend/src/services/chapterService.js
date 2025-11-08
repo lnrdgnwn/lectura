@@ -1,11 +1,8 @@
-// services/ChapterService.js
 import api from "./apiClient";
 import { extractErrorMessage } from "./httpError";
 
-/** List chapters untuk 1 novel (urut dari BE kalau sudah diset) */
 export async function getChaptersByNovel(novelId) {
   try {
-    // di sidebar kamu ada: GET /novels/{id}/chapter
     const res = await api.get(`/api/novels/${novelId}/chapter`);
     return res.data.data;
   } catch (err) {
@@ -13,7 +10,6 @@ export async function getChaptersByNovel(novelId) {
   }
 }
 
-/** Ambil 1 chapter by id */
 export async function getChapterById(id) {
   try {
     const res = await api.get(`/api/chapters/${id}`);
@@ -23,10 +19,7 @@ export async function getChapterById(id) {
   }
 }
 
-/** Buat chapter baru
- *  payload contoh dari kamu:
- *  { novel_id: 1, title: "Chapter 1", content: "....", publish: false|true }
- */
+
 export async function createChapter({
   novel_id,
   title,
@@ -42,7 +35,6 @@ export async function createChapter({
   }
 }
 
-/** Update chapter (order_no/title/content) — sesuai contohmu */
 export async function updateChapter(id, { order_no, title, content }) {
   try {
     const body = {};
@@ -57,7 +49,7 @@ export async function updateChapter(id, { order_no, title, content }) {
   }
 }
 
-/** Hapus chapter */
+
 export async function deleteChapter(id) {
   try {
     const res = await api.delete(`/api/chapters/${id}`);
@@ -67,10 +59,9 @@ export async function deleteChapter(id) {
   }
 }
 
-/** Convenience: publish / unpublish (kalau BE menerima flag `publish`) */
+
 export async function setChapterPublish(id, publish) {
   try {
-    // Jika BE-mu tidak menerima ini via PUT, hapus fungsi ini.
     const res = await api.put(`/api/chapters/${id}`, { publish: !!publish });
     return res.data.data;
   } catch (err) {
