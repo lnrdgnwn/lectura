@@ -1,16 +1,65 @@
-# React + Vite
+# 📖 Lectura Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Welcome to the **Frontend** side of Lectura. Lectura is an online novel reading and writing platform — a modern novel web application built with **Vite**, **React**, and **Tailwind CSS**.
+It provides readers with a seamless experience to explore, write, read, and interact with novels.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🧰 Tech Stack
 
-## React Compiler
+⚡ Vite — Fast and modern build tool
 
-The React Compiler is not enabled on this template. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+⚛️ React.js — Frontend framework
 
-## Expanding the ESLint configuration
+🎨 Tailwind CSS — Utility-first CSS framework for styling
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+🔗 Axios — HTTP client for API integration
+
+## 🚀 Installation
+
+Follow these steps to get the frontend running on your local machine.
+
+### 🧩 Prerequisites
+
+Make sure you have installed:
+
+- **Node.js** (v21.9.x or later)
+- **npm** or **yarn** (as your package manager)
+
+---
+
+### ⚙️ Steps to Run the App Locally
+
+1. **⚠️ Important: Clone the repository before installing the frontend**
+
+   ```bash
+   git clone https://github.com/lnrdgnwn/lectura.git
+   cd lectura
+   ```
+
+2. **Go to the frontend directory**
+
+   ```bash
+   cd frontend
+   ```
+
+3. **Install Depedencies**
+
+   ```bash
+   npm install
+   ```
+
+4. **Setup environment variables**
+   Create a .env file in the root directory and add the following line:
+
+   ```bash
+   VITE_API_URL=https://your-api-url.com
+   ```
+
+   Replace https://your-api-url.com with your actual backend API URL.
+
+5. **Setup environment variables**
+   ```bash
+   npm run dev
+   ```
+   The app should now be running at http://localhost:5173

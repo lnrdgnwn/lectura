@@ -1,0 +1,21 @@
+package routes
+
+import (
+	"final_project/controllers"
+	"final_project/middlewares"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+func novelRoutes(api fiber.Router) {
+	api.Get("/novels", controllers.GetNovel)
+	api.Get("/novels/search", controllers.SearchNovels)
+	api.Get("/novels/me", middlewares.AuthMiddleware(), controllers.GetMyNovels)
+	api.Get("/novels/:id", controllers.GetNovelByID)
+	api.Get("/novels/by-genre/:genre_id", controllers.GetNovelByGenreID)
+	api.Get("/novels/:novel_id/chapters", controllers.ListChapters)
+
+	api.Post("/novels", middlewares.AuthMiddleware(), controllers.PostNovel)
+	api.Put("/novels/:id", middlewares.AuthMiddleware(), controllers.UpdateNovel)
+	api.Delete("/novels/:id", middlewares.AuthMiddleware(), controllers.DeleteNovel)
+}
