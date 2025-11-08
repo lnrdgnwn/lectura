@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { FaBookOpen, FaHome, FaPlusCircle } from "react-icons/fa";
 import { toast } from "react-hot-toast";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../../services/bookmarkService";
 
 export default function NovelCard({ novel }) {
+  const navigate = useNavigate();
   if (!novel) return null;
 
   const chapterCount = novel.chapters?.length ?? 0;
@@ -55,7 +56,9 @@ export default function NovelCard({ novel }) {
       toast.success("Added to Library");
     } catch (e) {
       setBmError(e?.message || "Failed to add to library");
-      toast.error(e?.message || "Failed to add to library");
+      if (e.message == "unauthorized") {
+        navigate("/login");
+      }
     } finally {
       setBmLoading(false);
     }
