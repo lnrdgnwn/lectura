@@ -27,7 +27,6 @@ func DBLoad() {
 	if err != nil {
 		panic("Failed to connect to database")
 	}
-	db = db.Debug()
 	fmt.Println("Database connection established")
 	DB = db
 }
