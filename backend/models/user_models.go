@@ -8,7 +8,7 @@ type User struct {
 	Email          string         `gorm:"size:255;uniqueIndex;not null" json:"email"`
 	PasswordHash   string         `gorm:"size:255;not null" json:"-"`
 	Role           string         `gorm:"size:20;not null;default:'user'" json:"role"`
-	ProfilePicture *string        `gorm:"default:'http://127.0.0.1:3000/assets/IMG/profile_picture/Cukup.jpg'" json:"profile_picture,omitempty"`
+	ProfilePicture *string        `gorm:"default:'http://127.0.0.1:3000/assets/IMG/profile_picture/default_picture.jpg'" json:"profile_picture,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	RefreshToken   []RefreshToken `gorm:"constraint:OnDelete:CASCADE;" json:"-"`

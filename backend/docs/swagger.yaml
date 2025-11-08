@@ -2,6 +2,36 @@ basePath: /api/v1
 consumes:
 - application/json
 definitions:
+  models.ChapterCreateRequest:
+    properties:
+      content:
+        example: Isi chapter...
+        type: string
+      novel_id:
+        example: 1
+        type: integer
+      publish:
+        example: true
+        type: boolean
+      title:
+        example: Chapter 1
+        type: string
+    type: object
+  models.ChapterUpdateRequest:
+    properties:
+      content:
+        example: Isi baru
+        type: string
+      order_no:
+        example: 2
+        type: integer
+      publish:
+        example: true
+        type: boolean
+      title:
+        example: Judul baru
+        type: string
+    type: object
   models.LoginRequest:
     properties:
       email:
@@ -39,6 +69,129 @@ info:
   title: Final Project Novel API
   version: "1.0"
 paths:
+  /admin/genres/home:
+    put:
+      consumes:
+      - application/json
+      description: Mengatur ulang daftar genre yang memiliki show_on_home = true berdasarkan
+        genre_ids yang dikirim. Hanya untuk admin.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre untuk halaman utama berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / genre_ids kosong / genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui genre halaman utama
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Atur genre yang tampil di halaman utama
+      tags:
+      - Genres
+  /admin/users:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar user dengan pagination. Hanya bisa diakses oleh
+        admin.
+      parameters:
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar user + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden - admin only
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: List semua user (admin)
+      tags:
+      - Users
+  /admin/users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus user berdasarkan ID. Hanya bisa diakses oleh admin.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Parameter id wajib / tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden - admin only
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus user (admin)
+      tags:
+      - Users
   /auth/login:
     post:
       consumes:
@@ -316,6 +469,1186 @@ paths:
       summary: Daftar novel dari bookmark user
       tags:
       - Bookmarks
+  /chapters:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar chapter. Non-admin hanya melihat chapter yang
+        sudah terbit. Admin bisa melihat semua.
+      parameters:
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Filter berdasarkan ID novel
+        in: query
+        name: novel_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar chapter + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: novel_id tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil data chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ambil daftar chapter (global)
+      tags:
+      - Chapters
+    post:
+      consumes:
+      - application/json
+      description: Menambahkan chapter baru ke novel. Hanya author novel atau admin
+        yang boleh menambah.
+      parameters:
+      - description: Data chapter baru
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChapterCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Chapter dibuat (draft / terbit)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field wajib kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang untuk novel ini
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menambah chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Tambah chapter baru
+      tags:
+      - Chapters
+  /chapters/{id}:
+    delete:
+      description: Menghapus chapter. Hanya author novel atau admin yang boleh.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chapter dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus chapter
+      tags:
+      - Chapters
+    get:
+      description: Mengambil detail satu chapter. Draft hanya bisa diakses oleh author
+        novel atau admin.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail chapter
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang mengakses draft
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail chapter
+      tags:
+      - Chapters
+    put:
+      consumes:
+      - application/json
+      description: Mengubah data chapter (judul, konten, urutan, status publish).
+        Hanya author novel atau admin.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data update chapter
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChapterUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chapter diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / order_no tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter atau novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update chapter
+      tags:
+      - Chapters
+  /genres:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar genre dengan opsi pencarian dan pagination.
+      parameters:
+      - description: Cari berdasarkan name atau slug
+        in: query
+        name: q
+        type: string
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar genre + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List genre
+      tags:
+      - Genres
+    post:
+      consumes:
+      - application/json
+      description: Membuat genre baru dengan name dan slug unik.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Genre berhasil dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field wajib kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Buat genre baru
+      tags:
+      - Genres
+  /genres/{id}:
+    delete:
+      description: Menghapus genre berdasarkan ID atau slug. Relasi many2many ke novel
+        akan ikut terhapus karena constraint OnDelete:CASCADE di join table.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus genre
+      tags:
+      - Genres
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail genre berdasarkan ID atau slug.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail genre
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail genre
+      tags:
+      - Genres
+    put:
+      consumes:
+      - application/json
+      description: Mengubah name dan/atau slug genre berdasarkan ID atau slug. Wajib
+        unik.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update genre
+      tags:
+      - Genres
+  /genres/home:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar genre yang ditandai tampil di halaman utama (show_on_home
+        = true).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar genre untuk halaman utama
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List genre untuk halaman utama
+      tags:
+      - Genres
+  /novels:
+    get:
+      description: |-
+        Mengambil semua novel dengan genres, tags, info author (username & profile_picture), dan chapters yang boleh diakses.
+        - Admin: semua chapters.
+        - User login: chapter published + semua chapter novel miliknya.
+        - Tanpa login: hanya chapter yang sudah published.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar novel
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil novel
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ambil semua novel
+      tags:
+      - Novels
+    post:
+      consumes:
+      - application/json
+      - multipart/form-data
+      description: Membuat novel baru milik user login, dengan optional genres & tags.
+        Status hanya boleh ongoing, completed, atau hiatus.
+      parameters:
+      - description: Judul novel
+        example: '"Judul Keren"'
+        in: formData
+        name: title
+        required: true
+        type: string
+      - description: Slug unik novel
+        example: '"judul-keren"'
+        in: formData
+        name: slug
+        required: true
+        type: string
+      - description: Sinopsis novel
+        in: formData
+        name: synopsis
+        type: string
+      - description: URL cover (jika tidak upload file)
+        in: formData
+        name: cover_url
+        type: string
+      - description: File cover (opsional, multipart)
+        in: formData
+        name: cover_image
+        type: file
+      - description: 'Status (ongoing, completed, hiatus). Default: ongoing'
+        in: formData
+        name: status
+        type: string
+      - collectionFormat: csv
+        description: Array ID genre (maksimal 1 genre)
+        in: formData
+        items:
+          type: integer
+        name: genre_ids
+        type: array
+      - collectionFormat: csv
+        description: Array ID tag
+        in: formData
+        items:
+          type: integer
+        name: tag_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Novel dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field wajib kosong / status tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat novel
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Buat novel baru
+      tags:
+      - Novels
+  /novels/{id}:
+    delete:
+      description: Menghapus novel milik author atau oleh admin.
+      parameters:
+      - description: ID Novel
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Novel dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang menghapus novel
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus novel
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus novel
+      tags:
+      - Novels
+    get:
+      description: |-
+        Mengambil detail novel berdasarkan ID, termasuk genres, tags, author (username & profile_picture), dan daftar chapters.
+        - Admin/Author: semua chapters (termasuk draft).
+        - User lain/tanpa login: hanya chapter yang sudah published.
+      parameters:
+      - description: ID Novel
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail novel
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil novel
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail novel
+      tags:
+      - Novels
+    put:
+      consumes:
+      - application/json
+      - multipart/form-data
+      description: Memperbarui novel milik author (atau admin), termasuk title, synopsis,
+        cover, status, genre, dan tag. Mengembalikan detail lengkap novel + author
+        + chapters.
+      parameters:
+      - description: ID Novel
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Judul novel
+        in: formData
+        name: title
+        type: string
+      - description: Sinopsis novel
+        in: formData
+        name: synopsis
+        type: string
+      - description: URL cover baru atau path file yang diupload
+        in: formData
+        name: cover_image
+        type: string
+      - description: File cover (opsional, multipart)
+        in: formData
+        name: cover_image
+        type: file
+      - description: Status (ongoing, completed, hiatus)
+        in: formData
+        name: status
+        type: string
+      - collectionFormat: csv
+        description: Array ID genre (maksimal 1 genre). Jika kosong [] akan menghapus
+          semua genre.
+        in: formData
+        items:
+          type: integer
+        name: genre_ids
+        type: array
+      - collectionFormat: csv
+        description: Array ID tag. Jika kosong [] akan menghapus semua tag.
+        in: formData
+        items:
+          type: integer
+        name: tag_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Novel diperbarui (detail lengkap)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / status tidak valid / genre/tag tidak
+            ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang mengubah novel
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan perubahan / memuat ulang novel
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Perbarui novel
+      tags:
+      - Novels
+  /novels/{novel_id}/chapters:
+    get:
+      description: Mengambil semua chapter untuk suatu novel. User biasa hanya melihat
+        yang sudah terbit, author & admin bisa melihat termasuk draft.
+      parameters:
+      - description: ID Novel
+        in: path
+        name: novel_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar chapter
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: novel_id tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Daftar chapter per novel
+      tags:
+      - Chapters
+  /novels/by-genre/:genre_id:
+    get:
+      description: Mengambil daftar novel untuk genre tertentu, termasuk genres, tags,
+        author (username & profile_picture), dan jumlah chapter terbit.
+      parameters:
+      - description: 'ID Genre (bisa juga dari path: /novels/genre/{genre_id})'
+        in: query
+        name: genre_id
+        required: true
+        type: integer
+      - description: 'Halaman (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Jumlah item per halaman (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar novel berdasarkan genre dengan meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: genre_id tidak valid / wajib diisi
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil data genre / novel
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Daftar novel berdasarkan genre
+      tags:
+      - Novels
+  /novels/search:
+    get:
+      description: Mencari novel berdasarkan title atau slug. Mengembalikan list novel
+        dengan genres, tags, author (username & profile_picture), dan chapters yang
+        terlihat sesuai role.
+      parameters:
+      - description: Kata kunci (cari di title atau slug)
+        in: query
+        name: q
+        type: string
+      - description: 'Halaman (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Jumlah item per halaman (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Hasil pencarian novel dengan meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil hasil pencarian
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Cari novel
+      tags:
+      - Novels
+  /tags:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar tag dengan opsi pencarian dan pagination.
+      parameters:
+      - description: Cari berdasarkan name atau slug
+        in: query
+        name: q
+        type: string
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar tag + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar tag
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List tag
+      tags:
+      - Tags
+    post:
+      consumes:
+      - application/json
+      description: Membuat tag baru dengan name & slug unik. Jika slug kosong akan
+        digenerate otomatis dari name.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Tag berhasil dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / name kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Buat tag baru
+      tags:
+      - Tags
+  /tags/{id}:
+    delete:
+      description: Menghapus tag berdasarkan ID atau slug. Relasi many2many ke novel_tags
+        akan ikut terhapus sesuai constraint.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tag berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus tag
+      tags:
+      - Tags
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail tag berdasarkan ID atau slug.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail tag
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil tag
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail tag
+      tags:
+      - Tags
+    put:
+      consumes:
+      - application/json
+      description: Mengubah name dan/atau slug tag berdasarkan ID atau slug. Wajib
+        unik.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tag berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update tag
+      tags:
+      - Tags
+  /users/me:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail profil user yang sedang login berdasarkan access_token
+        (cookie).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail profil berhasil diambil
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized / token tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Get profil user login
+      tags:
+      - Users
+    put:
+      consumes:
+      - multipart/form-data
+      - application/json
+      description: Mengubah username, email, dan/atau foto profil user yang sedang
+        login. Bisa via JSON atau form-data.
+      parameters:
+      - description: Username baru
+        in: formData
+        name: username
+        type: string
+      - description: Email baru
+        in: formData
+        name: email
+        type: string
+      - description: Password baru (opsional)
+        in: formData
+        name: password
+        type: string
+      - description: Foto profil baru
+        in: formData
+        name: profile_picture
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profil berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Username atau email sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan perubahan profil
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update profil user login
+      tags:
+      - Users
+  /users/me/changepassword:
+    put:
+      consumes:
+      - application/json
+      description: Mengganti password user yang sedang login. Wajib kirim password
+        lama & baru.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password berhasil diubah
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / rule gagal
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized / password lama salah
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan password baru
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Ganti password user login
+      tags:
+      - Users
+  /users/me/novels:
+    get:
+      description: Mengambil daftar novel yang ditulis oleh user yang sedang login,
+        termasuk genres, tags, author (username & profile_picture), dan jumlah chapter
+        terbit.
+      parameters:
+      - description: Filter judul/slug (pencarian bebas)
+        in: query
+        name: q
+        type: string
+      - description: Filter status (ongoing, completed, hiatus)
+        in: query
+        name: status
+        type: string
+      - description: 'Halaman (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Jumlah item per halaman (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar novel milik user dengan meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Status tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil novel milik user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Daftar novel milik user login
+      tags:
+      - Novels
 produces:
 - application/json
 schemes:

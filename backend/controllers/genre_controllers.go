@@ -53,6 +53,18 @@ func genrefail(c *fiber.Ctx, status int, msg string, err error) error {
 	return c.Status(status).JSON(resp)
 }
 
+// ListGenres godoc
+// @Summary      List genre
+// @Description  Mengambil daftar genre dengan opsi pencarian dan pagination.
+// @Tags         Genres
+// @Accept       json
+// @Produce      json
+// @Param        q      query     string  false  "Cari berdasarkan name atau slug"
+// @Param        page   query     int     false  "Halaman (default 1)"
+// @Param        limit  query     int     false  "Jumlah per halaman (default 50)"
+// @Success      200    {object}  map[string]interface{}  "Daftar genre + meta pagination"
+// @Failure      500    {object}  map[string]interface{}  "Gagal mengambil daftar genre"
+// @Router       /genres [get]
 func ListGenres(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -84,6 +96,17 @@ func ListGenres(c *fiber.Ctx) error {
 	return genreokList(c, "Daftar genre berhasil diambil", genres, page, limit, total)
 }
 
+// GetGenre godoc
+// @Summary      Detail genre
+// @Description  Mengambil detail genre berdasarkan ID atau slug.
+// @Tags         Genres
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "ID atau slug genre"
+// @Success      200  {object}  map[string]interface{}  "Detail genre"
+// @Failure      404  {object}  map[string]interface{}  "Genre tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil genre"
+// @Router       /genres/{id} [get]
 func GetGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
@@ -107,6 +130,15 @@ func GetGenre(c *fiber.Ctx) error {
 	return genreok(c, http.StatusOK, "Genre berhasil diambil", g)
 }
 
+// GetHomeGenres godoc
+// @Summary      List genre untuk halaman utama
+// @Description  Mengambil daftar genre yang ditandai tampil di halaman utama (show_on_home = true).
+// @Tags         Genres
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "Daftar genre untuk halaman utama"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil genre"
+// @Router       /genres/home [get]
 func GetHomeGenres(c *fiber.Ctx) error {
 	var genres []models.Genre
 	if err := database.DB.
@@ -119,6 +151,18 @@ func GetHomeGenres(c *fiber.Ctx) error {
 	return genreok(c, http.StatusOK, "Daftar genre untuk halaman utama", genres)
 }
 
+// GenreShowByAdmin godoc
+// @Summary      Atur genre yang tampil di halaman utama
+// @Description  Mengatur ulang daftar genre yang memiliki show_on_home = true berdasarkan genre_ids yang dikirim. Hanya untuk admin.
+// @Tags         Genres
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object  true  "Body: {\"genre_ids\": [1,2,3]}"
+// @Success      200   {object}  map[string]interface{}  "Genre untuk halaman utama berhasil diperbarui"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / genre_ids kosong / genre tidak ditemukan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal memperbarui genre halaman utama"
+// @Router       /admin/genres/home [put]
 func GenreShowByAdmin(c *fiber.Ctx) error {
 	var body struct {
 		GenreIDs []uint `json:"genre_ids"`
@@ -170,6 +214,19 @@ func GenreShowByAdmin(c *fiber.Ctx) error {
 	return genreok(c, http.StatusOK, "Genre untuk halaman utama berhasil diperbarui", genres)
 }
 
+// CreateGenre godoc
+// @Summary      Buat genre baru
+// @Description  Membuat genre baru dengan name dan slug unik.
+// @Tags         Genres
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object  true  "Body: {\"name\": \"Action\", \"slug\": \"action\"}"
+// @Success      201   {object}  map[string]interface{}  "Genre berhasil dibuat"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / field wajib kosong"
+// @Failure      409   {object}  map[string]interface{}  "Name atau slug sudah digunakan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal membuat genre"
+// @Router       /genres [post]
 func CreateGenre(c *fiber.Ctx) error {
 	var payload struct {
 		Name string `json:"name"`
@@ -204,6 +261,21 @@ func CreateGenre(c *fiber.Ctx) error {
 	return genreok(c, http.StatusCreated, "Genre berhasil dibuat", g)
 }
 
+// UpdateGenre godoc
+// @Summary      Update genre
+// @Description  Mengubah name dan/atau slug genre berdasarkan ID atau slug. Wajib unik.
+// @Tags         Genres
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string  true  "ID atau slug genre"
+// @Param        body  body      object  true  "Body: {\"name\": \"Nama Baru\", \"slug\": \"slug-baru\"} (opsional per field)"
+// @Success      200   {object}  map[string]interface{}  "Genre berhasil diperbarui"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / field kosong"
+// @Failure      404   {object}  map[string]interface{}  "Genre tidak ditemukan"
+// @Failure      409   {object}  map[string]interface{}  "Name atau slug sudah digunakan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal memperbarui genre"
+// @Router       /genres/{id} [put]
 func UpdateGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
@@ -264,6 +336,17 @@ func UpdateGenre(c *fiber.Ctx) error {
 	return genreok(c, http.StatusOK, "Genre berhasil diperbarui", g)
 }
 
+// DeleteGenre godoc
+// @Summary      Hapus genre
+// @Description  Menghapus genre berdasarkan ID atau slug. Relasi many2many ke novel akan ikut terhapus karena constraint OnDelete:CASCADE di join table.
+// @Tags         Genres
+// @Security     CookieAuth
+// @Produce      json
+// @Param        id   path      string  true  "ID atau slug genre"
+// @Success      200  {object}  map[string]interface{}  "Genre berhasil dihapus"
+// @Failure      404  {object}  map[string]interface{}  "Genre tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus genre"
+// @Router       /genres/{id} [delete]
 func DeleteGenre(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var g models.Genre
