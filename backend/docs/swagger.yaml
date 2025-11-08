@@ -164,6 +164,122 @@ paths:
       summary: Register user baru
       tags:
       - Auth
+  /bookmarks:
+    post:
+      consumes:
+      - application/json
+      description: Menambahkan novel ke daftar bookmark user yang sedang login.
+      parameters:
+      - description: 'novel_id, contoh: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Bookmark ditambahkan
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / novel_id kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Novel sudah dibookmark
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menambahkan bookmark
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Tambah bookmark novel
+      tags:
+      - Bookmarks
+  /bookmarks/{novel_id}:
+    delete:
+      description: Menghapus bookmark novel tertentu milik user yang sedang login.
+      parameters:
+      - description: ID Novel yang dibookmark
+        in: path
+        name: novel_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bookmark dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: novel_id tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Bookmark tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus bookmark
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus bookmark novel
+      tags:
+      - Bookmarks
+  /users/me/bookmarks:
+    get:
+      description: Mengambil daftar bookmark milik user yang sedang login, termasuk
+        info singkat novel.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar bookmark dengan meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil bookmark
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: List bookmark milik user
+      tags:
+      - Bookmarks
 produces:
 - application/json
 schemes:

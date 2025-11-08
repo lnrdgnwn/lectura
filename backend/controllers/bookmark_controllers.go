@@ -77,6 +77,20 @@ func uidFromCtx(c *fiber.Ctx) (uint, error) {
 	}
 }
 
+// AddBookmark godoc
+// @Summary      Tambah bookmark novel
+// @Description  Menambahkan novel ke daftar bookmark user yang sedang login.
+// @Tags         Bookmarks
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      map[string]uint  true  "novel_id, contoh: {\"novel_id\": 1}"
+// @Success      201   {object}  map[string]interface{}  "Bookmark ditambahkan"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / novel_id kosong"
+// @Failure      401   {object}  map[string]interface{}  "Unauthorized"
+// @Failure      409   {object}  map[string]interface{}  "Novel sudah dibookmark"
+// @Failure      500   {object}  map[string]interface{}  "Gagal menambahkan bookmark"
+// @Router       /bookmarks [post]
 func AddBookmark(c *fiber.Ctx) error {
 	var body struct {
 		NovelID uint `json:"novel_id"`
@@ -114,6 +128,19 @@ func AddBookmark(c *fiber.Ctx) error {
 	return bookmarkOK(c, http.StatusCreated, "Bookmark ditambahkan", b)
 }
 
+// RemoveBookmark godoc
+// @Summary      Hapus bookmark novel
+// @Description  Menghapus bookmark novel tertentu milik user yang sedang login.
+// @Tags         Bookmarks
+// @Security     CookieAuth
+// @Produce      json
+// @Param        novel_id  path      int  true  "ID Novel yang dibookmark"
+// @Success      200       {object}  map[string]interface{}  "Bookmark dihapus"
+// @Failure      400       {object}  map[string]interface{}  "novel_id tidak valid"
+// @Failure      401       {object}  map[string]interface{}  "Unauthorized"
+// @Failure      404       {object}  map[string]interface{}  "Bookmark tidak ditemukan"
+// @Failure      500       {object}  map[string]interface{}  "Gagal menghapus bookmark"
+// @Router       /bookmarks/{novel_id} [delete]
 func RemoveBookmark(c *fiber.Ctx) error {
 	novelIDParam := c.Params("novel_id")
 	if novelIDParam == "" {
@@ -140,6 +167,16 @@ func RemoveBookmark(c *fiber.Ctx) error {
 	return bookmarkOK(c, http.StatusOK, "Bookmark dihapus", nil)
 }
 
+// ListBookmarks godoc
+// @Summary      List bookmark milik user
+// @Description  Mengambil daftar bookmark milik user yang sedang login, termasuk info singkat novel.
+// @Tags         Bookmarks
+// @Security     CookieAuth
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "Daftar bookmark dengan meta pagination"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil bookmark"
+// @Router       /users/me/bookmarks [get]
 func ListBookmarks(c *fiber.Ctx) error {
 	uid, err := uidFromCtx(c)
 	if err != nil {
