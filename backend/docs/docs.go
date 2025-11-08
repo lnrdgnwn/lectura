@@ -368,26 +368,26 @@ const docTemplate = `{
                 }
             }
         },
-        "/bookmarks/{novel_id}": {
+        "/bookmarks/{id}": {
             "delete": {
                 "security": [
                     {
                         "CookieAuth": []
                     }
                 ],
-                "description": "Menghapus bookmark novel tertentu milik user yang sedang login.",
+                "description": "Menghapus satu bookmark milik user yang sedang login berdasarkan bookmark_id.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Bookmarks"
                 ],
-                "summary": "Hapus bookmark novel",
+                "summary": "Hapus bookmark",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "ID Novel yang dibookmark",
-                        "name": "novel_id",
+                        "description": "Bookmark ID",
+                        "name": "id",
                         "in": "path",
                         "required": true
                     }
@@ -401,7 +401,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "novel_id tidak valid",
+                        "description": "id tidak valid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

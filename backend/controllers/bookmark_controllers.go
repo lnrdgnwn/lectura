@@ -359,27 +359,27 @@ func GetNovelByBookmarks(c *fiber.Ctx) error {
 }
 
 // RemoveBookmark godoc
-// @Summary      Hapus bookmark novel
-// @Description  Menghapus bookmark novel tertentu milik user yang sedang login.
+// @Summary      Hapus bookmark
+// @Description  Menghapus satu bookmark milik user yang sedang login berdasarkan bookmark_id.
 // @Tags         Bookmarks
 // @Security     CookieAuth
 // @Produce      json
-// @Param        novel_id  path      int  true  "ID Novel yang dibookmark"
-// @Success      200       {object}  map[string]interface{}  "Bookmark dihapus"
-// @Failure      400       {object}  map[string]interface{}  "novel_id tidak valid"
-// @Failure      401       {object}  map[string]interface{}  "Unauthorized"
-// @Failure      404       {object}  map[string]interface{}  "Bookmark tidak ditemukan"
-// @Failure      500       {object}  map[string]interface{}  "Gagal menghapus bookmark"
-// @Router       /bookmarks/{novel_id} [delete]
+// @Param        id   path      int  true  "Bookmark ID"
+// @Success      200  {object}  map[string]interface{}  "Bookmark dihapus"
+// @Failure      400  {object}  map[string]interface{}  "id tidak valid"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized"
+// @Failure      404  {object}  map[string]interface{}  "Bookmark tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus bookmark"
+// @Router       /bookmarks/{id} [delete]
 func RemoveBookmark(c *fiber.Ctx) error {
-	novelIDParam := c.Params("novel_id")
-	if novelIDParam == "" {
-		return bookmarkFail(c, http.StatusBadRequest, "novel_id wajib diisi", nil)
+	idParam := c.Params("id")
+	if idParam == "" {
+		return bookmarkFail(c, http.StatusBadRequest, "id wajib diisi", nil)
 	}
 
-	var novelID uint
-	if _, err := fmt.Sscanf(novelIDParam, "%d", &novelID); err != nil || novelID == 0 {
-		return bookmarkFail(c, http.StatusBadRequest, "novel_id tidak valid", err)
+	var bookmarkID uint
+	if _, err := fmt.Sscanf(idParam, "%d", &bookmarkID); err != nil || bookmarkID == 0 {
+		return bookmarkFail(c, http.StatusBadRequest, "id tidak valid", err)
 	}
 
 	uid, err := uidFromCtx(c)
@@ -387,13 +387,17 @@ func RemoveBookmark(c *fiber.Ctx) error {
 		return bookmarkFail(c, http.StatusUnauthorized, "Unauthorized", err)
 	}
 
-	res := database.DB.Where("user_id = ? AND novel_id = ?", uid, novelID).Delete(&models.Bookmark{})
+	res := database.DB.
+		Where("id = ? AND user_id = ?", bookmarkID, uid).
+		Delete(&models.Bookmark{})
+
 	if res.Error != nil {
 		return bookmarkFail(c, http.StatusInternalServerError, "Gagal menghapus bookmark", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return bookmarkFail(c, http.StatusNotFound, "Bookmark tidak ditemukan", nil)
 	}
+
 	return bookmarkOK(c, http.StatusOK, "Bookmark dihapus", nil)
 }
 

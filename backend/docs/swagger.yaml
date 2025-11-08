@@ -237,13 +237,14 @@ paths:
       summary: Tambah bookmark novel
       tags:
       - Bookmarks
-  /bookmarks/{novel_id}:
+  /bookmarks/{id}:
     delete:
-      description: Menghapus bookmark novel tertentu milik user yang sedang login.
+      description: Menghapus satu bookmark milik user yang sedang login berdasarkan
+        bookmark_id.
       parameters:
-      - description: ID Novel yang dibookmark
+      - description: Bookmark ID
         in: path
-        name: novel_id
+        name: id
         required: true
         type: integer
       produces:
@@ -255,7 +256,7 @@ paths:
             additionalProperties: true
             type: object
         "400":
-          description: novel_id tidak valid
+          description: id tidak valid
           schema:
             additionalProperties: true
             type: object
@@ -276,7 +277,7 @@ paths:
             type: object
       security:
       - CookieAuth: []
-      summary: Hapus bookmark novel
+      summary: Hapus bookmark
       tags:
       - Bookmarks
   /bookmarks/novels:
