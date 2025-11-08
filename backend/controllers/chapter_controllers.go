@@ -56,6 +56,19 @@ func onlyPublished(db *gorm.DB) *gorm.DB {
 	return db.Where("published_at IS NOT NULL AND published_at <= ?", time.Now())
 }
 
+// GetAllChapters godoc
+// @Summary      Ambil daftar chapter (global)
+// @Description  Mengambil daftar chapter. Non-admin hanya melihat chapter yang sudah terbit. Admin bisa melihat semua.
+// @Tags         Chapters
+// @Accept       json
+// @Produce      json
+// @Param        page      query     int     false  "Halaman (default 1)"
+// @Param        limit     query     int     false  "Jumlah per halaman (default 50, max 200)"
+// @Param        novel_id  query     int     false  "Filter berdasarkan ID novel"
+// @Success      200       {object}  map[string]interface{}  "Daftar chapter + meta pagination"
+// @Failure      400       {object}  map[string]interface{}  "novel_id tidak valid"
+// @Failure      500       {object}  map[string]interface{}  "Gagal mengambil data chapter"
+// @Router       /chapters [get]
 func GetAllChapters(c *fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
@@ -108,6 +121,21 @@ func GetAllChapters(c *fiber.Ctx) error {
 	return chapterListOK(c, msg, chapters, page, limit, total)
 }
 
+// AddChapter godoc
+// @Summary      Tambah chapter baru
+// @Description  Menambahkan chapter baru ke novel. Hanya author novel atau admin yang boleh menambah.
+// @Tags         Chapters
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      models.ChapterCreateRequest  true  "Data chapter baru"
+// @Success      201   {object}  map[string]interface{}       "Chapter dibuat (draft / terbit)"
+// @Failure      400   {object}  map[string]interface{}       "Payload tidak valid / field wajib kosong"
+// @Failure      401   {object}  map[string]interface{}       "Unauthorized"
+// @Failure      403   {object}  map[string]interface{}       "Tidak berwenang untuk novel ini"
+// @Failure      404   {object}  map[string]interface{}       "Novel tidak ditemukan"
+// @Failure      500   {object}  map[string]interface{}       "Gagal menambah chapter"
+// @Router       /chapters [post]
 func AddChapter(c *fiber.Ctx) error {
 	var payload struct {
 		NovelID uint   `json:"novel_id"`
@@ -176,6 +204,17 @@ func AddChapter(c *fiber.Ctx) error {
 	return chapterOK(c, http.StatusCreated, statusMsg, ch)
 }
 
+// ListChapters godoc
+// @Summary      Daftar chapter per novel
+// @Description  Mengambil semua chapter untuk suatu novel. User biasa hanya melihat yang sudah terbit, author & admin bisa melihat termasuk draft.
+// @Tags         Chapters
+// @Produce      json
+// @Param        novel_id  path      int  true  "ID Novel"
+// @Success      200       {object}  map[string]interface{}  "Daftar chapter"
+// @Failure      400       {object}  map[string]interface{}  "novel_id tidak valid"
+// @Failure      404       {object}  map[string]interface{}  "Novel tidak ditemukan"
+// @Failure      500       {object}  map[string]interface{}  "Gagal mengambil chapter"
+// @Router       /novels/{novel_id}/chapters [get]
 func ListChapters(c *fiber.Ctx) error {
 	nid := c.Params("novel_id")
 	nidInt, err := strconv.Atoi(nid)
@@ -212,6 +251,17 @@ func ListChapters(c *fiber.Ctx) error {
 	return chapterOK(c, http.StatusOK, msg, chapters)
 }
 
+// GetChapter godoc
+// @Summary      Detail chapter
+// @Description  Mengambil detail satu chapter. Draft hanya bisa diakses oleh author novel atau admin.
+// @Tags         Chapters
+// @Produce      json
+// @Param        id   path      int  true  "ID Chapter"
+// @Success      200  {object}  map[string]interface{}  "Detail chapter"
+// @Failure      403  {object}  map[string]interface{}  "Tidak berwenang mengakses draft"
+// @Failure      404  {object}  map[string]interface{}  "Chapter tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil chapter"
+// @Router       /chapters/{id} [get]
 func GetChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
 
@@ -244,6 +294,22 @@ func GetChapter(c *fiber.Ctx) error {
 	return chapterFail(c, http.StatusForbidden, "Tidak berwenang mengakses draft chapter ini", nil)
 }
 
+// UpdateChapter godoc
+// @Summary      Update chapter
+// @Description  Mengubah data chapter (judul, konten, urutan, status publish). Hanya author novel atau admin.
+// @Tags         Chapters
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        id    path      int                          true  "ID Chapter"
+// @Param        body  body      models.ChapterUpdateRequest  true  "Data update chapter"
+// @Success      200   {object}  map[string]interface{}       "Chapter diperbarui"
+// @Failure      400   {object}  map[string]interface{}       "Payload tidak valid / order_no tidak valid"
+// @Failure      401   {object}  map[string]interface{}       "Unauthorized"
+// @Failure      403   {object}  map[string]interface{}       "Tidak berwenang"
+// @Failure      404   {object}  map[string]interface{}       "Chapter atau novel tidak ditemukan"
+// @Failure      500   {object}  map[string]interface{}       "Gagal memperbarui chapter"
+// @Router       /chapters/{id} [put]
 func UpdateChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
 
@@ -318,6 +384,19 @@ func UpdateChapter(c *fiber.Ctx) error {
 	return chapterOK(c, http.StatusOK, statusMsg, ch)
 }
 
+// DeleteChapter godoc
+// @Summary      Hapus chapter
+// @Description  Menghapus chapter. Hanya author novel atau admin yang boleh.
+// @Tags         Chapters
+// @Security     CookieAuth
+// @Produce      json
+// @Param        id   path      int  true  "ID Chapter"
+// @Success      200  {object}  map[string]interface{}  "Chapter dihapus"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized"
+// @Failure      403  {object}  map[string]interface{}  "Tidak berwenang"
+// @Failure      404  {object}  map[string]interface{}  "Chapter tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus chapter"
+// @Router       /chapters/{id} [delete]
 func DeleteChapter(c *fiber.Ctx) error {
 	id := c.Params("id")
 

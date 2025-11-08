@@ -2,6 +2,36 @@ basePath: /api/v1
 consumes:
 - application/json
 definitions:
+  models.ChapterCreateRequest:
+    properties:
+      content:
+        example: Isi chapter...
+        type: string
+      novel_id:
+        example: 1
+        type: integer
+      publish:
+        example: true
+        type: boolean
+      title:
+        example: Chapter 1
+        type: string
+    type: object
+  models.ChapterUpdateRequest:
+    properties:
+      content:
+        example: Isi baru
+        type: string
+      order_no:
+        example: 2
+        type: integer
+      publish:
+        example: true
+        type: boolean
+      title:
+        example: Judul baru
+        type: string
+    type: object
   models.LoginRequest:
     properties:
       email:
@@ -316,6 +346,264 @@ paths:
       summary: Daftar novel dari bookmark user
       tags:
       - Bookmarks
+  /chapters:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar chapter. Non-admin hanya melihat chapter yang
+        sudah terbit. Admin bisa melihat semua.
+      parameters:
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Filter berdasarkan ID novel
+        in: query
+        name: novel_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar chapter + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: novel_id tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil data chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ambil daftar chapter (global)
+      tags:
+      - Chapters
+    post:
+      consumes:
+      - application/json
+      description: Menambahkan chapter baru ke novel. Hanya author novel atau admin
+        yang boleh menambah.
+      parameters:
+      - description: Data chapter baru
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChapterCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Chapter dibuat (draft / terbit)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field wajib kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang untuk novel ini
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menambah chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Tambah chapter baru
+      tags:
+      - Chapters
+  /chapters/{id}:
+    delete:
+      description: Menghapus chapter. Hanya author novel atau admin yang boleh.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chapter dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus chapter
+      tags:
+      - Chapters
+    get:
+      description: Mengambil detail satu chapter. Draft hanya bisa diakses oleh author
+        novel atau admin.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail chapter
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang mengakses draft
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail chapter
+      tags:
+      - Chapters
+    put:
+      consumes:
+      - application/json
+      description: Mengubah data chapter (judul, konten, urutan, status publish).
+        Hanya author novel atau admin.
+      parameters:
+      - description: ID Chapter
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data update chapter
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChapterUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chapter diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / order_no tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Tidak berwenang
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Chapter atau novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui chapter
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update chapter
+      tags:
+      - Chapters
+  /novels/{novel_id}/chapters:
+    get:
+      description: Mengambil semua chapter untuk suatu novel. User biasa hanya melihat
+        yang sudah terbit, author & admin bisa melihat termasuk draft.
+      parameters:
+      - description: ID Novel
+        in: path
+        name: novel_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar chapter
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: novel_id tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Novel tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil chapter
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Daftar chapter per novel
+      tags:
+      - Chapters
 produces:
 - application/json
 schemes:

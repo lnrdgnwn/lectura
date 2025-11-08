@@ -430,9 +430,425 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/chapters": {
+            "get": {
+                "description": "Mengambil daftar chapter. Non-admin hanya melihat chapter yang sudah terbit. Admin bisa melihat semua.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Ambil daftar chapter (global)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Halaman (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Jumlah per halaman (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter berdasarkan ID novel",
+                        "name": "novel_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar chapter + meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "novel_id tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil data chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Menambahkan chapter baru ke novel. Hanya author novel atau admin yang boleh menambah.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Tambah chapter baru",
+                "parameters": [
+                    {
+                        "description": "Data chapter baru",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ChapterCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Chapter dibuat (draft / terbit)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Payload tidak valid / field wajib kosong",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang untuk novel ini",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menambah chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/chapters/{id}": {
+            "get": {
+                "description": "Mengambil detail satu chapter. Draft hanya bisa diakses oleh author novel atau admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Detail chapter",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Chapter",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Detail chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang mengakses draft",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Chapter tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Mengubah data chapter (judul, konten, urutan, status publish). Hanya author novel atau admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Update chapter",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Chapter",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data update chapter",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ChapterUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chapter diperbarui",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Payload tidak valid / order_no tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Chapter atau novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal memperbarui chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Menghapus chapter. Hanya author novel atau admin yang boleh.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Hapus chapter",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Chapter",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chapter dihapus",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Chapter tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menghapus chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/novels/{novel_id}/chapters": {
+            "get": {
+                "description": "Mengambil semua chapter untuk suatu novel. User biasa hanya melihat yang sudah terbit, author \u0026 admin bisa melihat termasuk draft.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chapters"
+                ],
+                "summary": "Daftar chapter per novel",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Novel",
+                        "name": "novel_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "novel_id tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil chapter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "models.ChapterCreateRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "Isi chapter..."
+                },
+                "novel_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "publish": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Chapter 1"
+                }
+            }
+        },
+        "models.ChapterUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "Isi baru"
+                },
+                "order_no": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "publish": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Judul baru"
+                }
+            }
+        },
         "models.LoginRequest": {
             "type": "object",
             "properties": {
