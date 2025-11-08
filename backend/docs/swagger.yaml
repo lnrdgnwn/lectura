@@ -1,0 +1,171 @@
+basePath: /api/v1
+consumes:
+- application/json
+definitions:
+  models.LoginRequest:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      password:
+        example: secret123
+        type: string
+    type: object
+  models.LogoutRequest:
+    properties:
+      refresh_token:
+        example: <encrypted_refresh_token>
+        type: string
+    type: object
+  models.RegisterRequest:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      password:
+        example: secret123
+        type: string
+      username:
+        example: johndoe
+        type: string
+    type: object
+host: localhost:3000
+info:
+  contact:
+    email: your.email@example.com
+    name: Your Name
+  description: REST API platform lECTURA (auth, users, novels, chapters, genres, tags,
+    bookmarks).
+  title: Final Project Novel API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Login dengan email & password. Token dikirim via cookie HttpOnly.
+      parameters:
+      - description: Data login
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login sukses
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Login
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Logout user. Menghapus refresh token dari Redis/DB dan mengosongkan
+        cookie.
+      parameters:
+      - description: Opsional jika tidak pakai cookie
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/models.LogoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Logout sukses
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Logout
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      description: Menggunakan refresh_token (cookie) untuk membuat access_token baru
+        (dan rotate refresh_token).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Refresh token sukses, token baru diset di cookie
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Refresh token tidak tersedia/invalid/kedaluwarsa
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat/simpan token baru
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Refresh access token
+      tags:
+      - Auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 'Membuat akun baru dengan username, email, dan password. Role default:
+        user.'
+      parameters:
+      - description: Data registrasi
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User berhasil terdaftar
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Register user baru
+      tags:
+      - Auth
+produces:
+- application/json
+schemes:
+- http
+swagger: "2.0"
