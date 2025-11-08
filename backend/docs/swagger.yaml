@@ -69,6 +69,42 @@ info:
   title: Final Project Novel API
   version: "1.0"
 paths:
+  /admin/genres/home:
+    put:
+      consumes:
+      - application/json
+      description: Mengatur ulang daftar genre yang memiliki show_on_home = true berdasarkan
+        genre_ids yang dikirim. Hanya untuk admin.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre untuk halaman utama berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / genre_ids kosong / genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui genre halaman utama
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Atur genre yang tampil di halaman utama
+      tags:
+      - Genres
   /auth/login:
     post:
       consumes:
@@ -568,6 +604,215 @@ paths:
       summary: Update chapter
       tags:
       - Chapters
+  /genres:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar genre dengan opsi pencarian dan pagination.
+      parameters:
+      - description: Cari berdasarkan name atau slug
+        in: query
+        name: q
+        type: string
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar genre + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List genre
+      tags:
+      - Genres
+    post:
+      consumes:
+      - application/json
+      description: Membuat genre baru dengan name dan slug unik.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Genre berhasil dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field wajib kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Buat genre baru
+      tags:
+      - Genres
+  /genres/{id}:
+    delete:
+      description: Menghapus genre berdasarkan ID atau slug. Relasi many2many ke novel
+        akan ikut terhapus karena constraint OnDelete:CASCADE di join table.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus genre
+      tags:
+      - Genres
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail genre berdasarkan ID atau slug.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail genre
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail genre
+      tags:
+      - Genres
+    put:
+      consumes:
+      - application/json
+      description: Mengubah name dan/atau slug genre berdasarkan ID atau slug. Wajib
+        unik.
+      parameters:
+      - description: ID atau slug genre
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Genre berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Genre tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui genre
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update genre
+      tags:
+      - Genres
+  /genres/home:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar genre yang ditandai tampil di halaman utama (show_on_home
+        = true).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar genre untuk halaman utama
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil genre
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List genre untuk halaman utama
+      tags:
+      - Genres
   /novels/{novel_id}/chapters:
     get:
       description: Mengambil semua chapter untuk suatu novel. User biasa hanya melihat
