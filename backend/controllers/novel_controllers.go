@@ -952,9 +952,82 @@ func UpdateNovel(c *fiber.Ctx) error {
 	if err := database.DB.Save(&novel).Error; err != nil {
 		return novelFail(c, http.StatusInternalServerError, "Gagal menyimpan perubahan", err)
 	}
-	_ = database.DB.Preload("Genres").Preload("Tags").First(&novel, novel.ID)
 
-	return novelOK(c, http.StatusOK, "Novel diperbarui", novel)
+	if err := database.DB.
+		Preload("Genres").
+		Preload("Tags").
+		First(&novel, novel.ID).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal memuat ulang novel", err)
+	}
+
+	type AuthorMini struct {
+		ID             uint    `json:"id"`
+		Username       string  `json:"username"`
+		ProfilePicture *string `json:"profile_picture"`
+	}
+
+	var author models.User
+	if err := database.DB.
+		Select("id, username, profile_picture").
+		First(&author, novel.AuthorID).Error; err != nil {
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data author", err)
+	}
+
+	authorMini := AuthorMini{
+		ID:             author.ID,
+		Username:       author.Username,
+		ProfilePicture: author.ProfilePicture,
+	}
+
+	var chapters []models.Chapter
+	chQuery := database.DB.
+		Model(&models.Chapter{}).
+		Where("novel_id = ?", novel.ID).
+		Order("order_no ASC")
+
+	if role == "admin" || uid == novel.AuthorID {
+		if err := chQuery.Find(&chapters).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil daftar chapter", err)
+		}
+	} else {
+		if err := chQuery.
+			Where("published_at IS NOT NULL AND published_at <= ?", time.Now()).
+			Find(&chapters).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil daftar chapter terbit", err)
+		}
+	}
+
+	type NovelDetailResponse struct {
+		ID         uint             `json:"id"`
+		Title      string           `json:"title"`
+		Slug       string           `json:"slug"`
+		Synopsis   *string          `json:"synopsis"`
+		CoverImage *string          `json:"cover_image"`
+		Status     string           `json:"status"`
+		Author     AuthorMini       `json:"author"`
+		Genres     []models.Genre   `json:"genres"`
+		Tags       []models.Tag     `json:"tags"`
+		Chapters   []models.Chapter `json:"chapters"`
+		CreatedAt  time.Time        `json:"created_at"`
+		UpdatedAt  time.Time        `json:"updated_at"`
+	}
+
+	resp := NovelDetailResponse{
+		ID:         novel.ID,
+		Title:      novel.Title,
+		Slug:       novel.Slug,
+		Synopsis:   novel.Synopsis,
+		CoverImage: novel.CoverImage,
+		Status:     novel.Status,
+		Author:     authorMini,
+		Genres:     novel.Genres,
+		Tags:       novel.Tags,
+		Chapters:   chapters,
+		CreatedAt:  novel.CreatedAt,
+		UpdatedAt:  novel.UpdatedAt,
+	}
+
+	return novelOK(c, http.StatusOK, "Novel diperbarui", resp)
 }
 
 func DeleteNovel(c *fiber.Ctx) error {
