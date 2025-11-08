@@ -156,6 +156,17 @@ func parseIDsFromForm(c *fiber.Ctx, keys ...string) ([]uint, bool, error) {
 	return nil, false, nil
 }
 
+// GetNovel godoc
+// @Summary      Ambil semua novel
+// @Description  Mengambil semua novel dengan genres, tags, info author (username & profile_picture), dan chapters yang boleh diakses.
+// @Description  - Admin: semua chapters.
+// @Description  - User login: chapter published + semua chapter novel miliknya.
+// @Description  - Tanpa login: hanya chapter yang sudah published.
+// @Tags         Novels
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "Daftar novel"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil novel"
+// @Router       /novels [get]
 func GetNovel(c *fiber.Ctx) error {
 	var novels []models.Novel
 	if err := database.DB.
@@ -315,6 +326,18 @@ func GetNovel(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Daftar novel", resp)
 }
 
+// GetNovelByID godoc
+// @Summary      Detail novel
+// @Description  Mengambil detail novel berdasarkan ID, termasuk genres, tags, author (username & profile_picture), dan daftar chapters.
+// @Description  - Admin/Author: semua chapters (termasuk draft).
+// @Description  - User lain/tanpa login: hanya chapter yang sudah published.
+// @Tags         Novels
+// @Produce      json
+// @Param        id   path      int  true  "ID Novel"
+// @Success      200  {object}  map[string]interface{}  "Detail novel"
+// @Failure      404  {object}  map[string]interface{}  "Novel tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil novel"
+// @Router       /novels/{id} [get]
 func GetNovelByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var novel models.Novel
@@ -406,6 +429,19 @@ func GetNovelByID(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Detail novel", resp)
 }
 
+// GetNovelByGenreID godoc
+// @Summary      Daftar novel berdasarkan genre
+// @Description  Mengambil daftar novel untuk genre tertentu, termasuk genres, tags, author (username & profile_picture), dan jumlah chapter terbit.
+// @Tags         Novels
+// @Produce      json
+// @Param        genre_id  query     int  true   "ID Genre (bisa juga dari path: /novels/genre/{genre_id})"
+// @Param        page      query     int  false  "Halaman (default: 1)"
+// @Param        limit     query     int  false  "Jumlah item per halaman (default: 20)"
+// @Success      200       {object}  map[string]interface{}  "Daftar novel berdasarkan genre dengan meta pagination"
+// @Failure      400       {object}  map[string]interface{}  "genre_id tidak valid / wajib diisi"
+// @Failure      404       {object}  map[string]interface{}  "Genre tidak ditemukan"
+// @Failure      500       {object}  map[string]interface{}  "Gagal mengambil data genre / novel"
+// @Router       /novels/by-genre/:genre_id [get]
 func GetNovelByGenreID(c *fiber.Ctx) error {
 	gidStr := c.Params("genre_id")
 	if gidStr == "" {
@@ -545,7 +581,6 @@ func GetNovelByGenreID(c *fiber.Ctx) error {
 	for _, n := range novels {
 		var authorPtr *AuthorMini
 		if am, ok := authorsMap[n.AuthorID]; ok {
-			// copy supaya pointer aman
 			a := am
 			authorPtr = &a
 		}
@@ -569,6 +604,21 @@ func GetNovelByGenreID(c *fiber.Ctx) error {
 	return novelListOK(c, "Daftar novel berdasarkan genre", resp, page, limit, total)
 }
 
+// GetMyNovels godoc
+// @Summary      Daftar novel milik user login
+// @Description  Mengambil daftar novel yang ditulis oleh user yang sedang login, termasuk genres, tags, author (username & profile_picture), dan jumlah chapter terbit.
+// @Tags         Novels
+// @Security     CookieAuth
+// @Produce      json
+// @Param        q       query     string  false  "Filter judul/slug (pencarian bebas)"
+// @Param        status  query     string  false  "Filter status (ongoing, completed, hiatus)"
+// @Param        page    query     int     false  "Halaman (default: 1)"
+// @Param        limit   query     int     false  "Jumlah item per halaman (default: 20)"
+// @Success      200     {object}  map[string]interface{}  "Daftar novel milik user dengan meta pagination"
+// @Failure      400     {object}  map[string]interface{}  "Status tidak valid"
+// @Failure      401     {object}  map[string]interface{}  "Unauthorized"
+// @Failure      500     {object}  map[string]interface{}  "Gagal mengambil novel milik user"
+// @Router       /users/me/novels [get]
 func GetMyNovels(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
@@ -722,6 +772,27 @@ func GetMyNovels(c *fiber.Ctx) error {
 	return novelListOK(c, "Daftar novel milik user", resp, page, limit, total)
 }
 
+// PostNovel godoc
+// @Summary      Buat novel baru
+// @Description  Membuat novel baru milik user login, dengan optional genres & tags. Status hanya boleh ongoing, completed, atau hiatus.
+// @Tags         Novels
+// @Security     CookieAuth
+// @Accept       json
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        title       formData  string  true   "Judul novel"             example("Judul Keren")
+// @Param        slug        formData  string  true   "Slug unik novel"         example("judul-keren")
+// @Param        synopsis    formData  string  false  "Sinopsis novel"
+// @Param        cover_url   formData  string  false  "URL cover (jika tidak upload file)"
+// @Param        cover_image formData  file    false  "File cover (opsional, multipart)"
+// @Param        status      formData  string  false  "Status (ongoing, completed, hiatus). Default: ongoing"
+// @Param        genre_ids   formData  []int   false  "Array ID genre (maksimal 1 genre)"
+// @Param        tag_ids     formData  []int   false  "Array ID tag"
+// @Success      201         {object}  map[string]interface{}  "Novel dibuat"
+// @Failure      400         {object}  map[string]interface{}  "Payload tidak valid / field wajib kosong / status tidak valid"
+// @Failure      401         {object}  map[string]interface{}  "Unauthorized"
+// @Failure      500         {object}  map[string]interface{}  "Gagal membuat novel"
+// @Router       /novels [post]
 func PostNovel(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
@@ -828,6 +899,29 @@ func PostNovel(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusCreated, "Novel dibuat", n)
 }
 
+// UpdateNovel godoc
+// @Summary      Perbarui novel
+// @Description  Memperbarui novel milik author (atau admin), termasuk title, synopsis, cover, status, genre, dan tag. Mengembalikan detail lengkap novel + author + chapters.
+// @Tags         Novels
+// @Security     CookieAuth
+// @Accept       json
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        id           path      int      true   "ID Novel"
+// @Param        title        formData  string   false  "Judul novel"
+// @Param        synopsis     formData  string   false  "Sinopsis novel"
+// @Param        cover_image  formData  string   false  "URL cover baru atau path file yang diupload"
+// @Param        cover_image  formData  file     false  "File cover (opsional, multipart)"
+// @Param        status       formData  string   false  "Status (ongoing, completed, hiatus)"
+// @Param        genre_ids    formData  []int    false  "Array ID genre (maksimal 1 genre). Jika kosong [] akan menghapus semua genre."
+// @Param        tag_ids      formData  []int    false  "Array ID tag. Jika kosong [] akan menghapus semua tag."
+// @Success      200          {object}  map[string]interface{}  "Novel diperbarui (detail lengkap)"
+// @Failure      400          {object}  map[string]interface{}  "Payload tidak valid / status tidak valid / genre/tag tidak ditemukan"
+// @Failure      401          {object}  map[string]interface{}  "Unauthorized"
+// @Failure      403          {object}  map[string]interface{}  "Tidak berwenang mengubah novel"
+// @Failure      404          {object}  map[string]interface{}  "Novel tidak ditemukan"
+// @Failure      500          {object}  map[string]interface{}  "Gagal menyimpan perubahan / memuat ulang novel"
+// @Router       /novels/{id} [put]
 func UpdateNovel(c *fiber.Ctx) error {
 	uid, role, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
@@ -1030,6 +1124,19 @@ func UpdateNovel(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Novel diperbarui", resp)
 }
 
+// DeleteNovel godoc
+// @Summary      Hapus novel
+// @Description  Menghapus novel milik author atau oleh admin.
+// @Tags         Novels
+// @Security     CookieAuth
+// @Produce      json
+// @Param        id   path      int  true  "ID Novel"
+// @Success      200  {object}  map[string]interface{}  "Novel dihapus"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized"
+// @Failure      403  {object}  map[string]interface{}  "Tidak berwenang menghapus novel"
+// @Failure      404  {object}  map[string]interface{}  "Novel tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus novel"
+// @Router       /novels/{id} [delete]
 func DeleteNovel(c *fiber.Ctx) error {
 	uid, role, err := getAuthFromAccessCookieNovel(c)
 	if err != nil {
@@ -1055,6 +1162,17 @@ func DeleteNovel(c *fiber.Ctx) error {
 	return novelOK(c, http.StatusOK, "Novel dihapus", nil)
 }
 
+// SearchNovels godoc
+// @Summary      Cari novel
+// @Description  Mencari novel berdasarkan title atau slug. Mengembalikan list novel dengan genres, tags, author (username & profile_picture), dan chapters yang terlihat sesuai role.
+// @Tags         Novels
+// @Produce      json
+// @Param        q      query     string  false  "Kata kunci (cari di title atau slug)"
+// @Param        page   query     int     false  "Halaman (default: 1)"
+// @Param        limit  query     int     false  "Jumlah item per halaman (default: 20)"
+// @Success      200    {object}  map[string]interface{}  "Hasil pencarian novel dengan meta pagination"
+// @Failure      500    {object}  map[string]interface{}  "Gagal mengambil hasil pencarian"
+// @Router       /novels/search [get]
 func SearchNovels(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
 	page, _ := strconv.Atoi(c.Query("page", "1"))

@@ -1246,6 +1246,483 @@ const docTemplate = `{
                 }
             }
         },
+        "/novels": {
+            "get": {
+                "description": "Mengambil semua novel dengan genres, tags, info author (username \u0026 profile_picture), dan chapters yang boleh diakses.\n- Admin: semua chapters.\n- User login: chapter published + semua chapter novel miliknya.\n- Tanpa login: hanya chapter yang sudah published.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Ambil semua novel",
+                "responses": {
+                    "200": {
+                        "description": "Daftar novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Membuat novel baru milik user login, dengan optional genres \u0026 tags. Status hanya boleh ongoing, completed, atau hiatus.",
+                "consumes": [
+                    "application/json",
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Buat novel baru",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "\"Judul Keren\"",
+                        "description": "Judul novel",
+                        "name": "title",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"judul-keren\"",
+                        "description": "Slug unik novel",
+                        "name": "slug",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sinopsis novel",
+                        "name": "synopsis",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL cover (jika tidak upload file)",
+                        "name": "cover_url",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "File cover (opsional, multipart)",
+                        "name": "cover_image",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (ongoing, completed, hiatus). Default: ongoing",
+                        "name": "status",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Array ID genre (maksimal 1 genre)",
+                        "name": "genre_ids",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Array ID tag",
+                        "name": "tag_ids",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Novel dibuat",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Payload tidak valid / field wajib kosong / status tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal membuat novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/novels/by-genre/:genre_id": {
+            "get": {
+                "description": "Mengambil daftar novel untuk genre tertentu, termasuk genres, tags, author (username \u0026 profile_picture), dan jumlah chapter terbit.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Daftar novel berdasarkan genre",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Genre (bisa juga dari path: /novels/genre/{genre_id})",
+                        "name": "genre_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Halaman (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Jumlah item per halaman (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar novel berdasarkan genre dengan meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "genre_id tidak valid / wajib diisi",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Genre tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil data genre / novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/novels/search": {
+            "get": {
+                "description": "Mencari novel berdasarkan title atau slug. Mengembalikan list novel dengan genres, tags, author (username \u0026 profile_picture), dan chapters yang terlihat sesuai role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Cari novel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Kata kunci (cari di title atau slug)",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Halaman (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Jumlah item per halaman (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Hasil pencarian novel dengan meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil hasil pencarian",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/novels/{id}": {
+            "get": {
+                "description": "Mengambil detail novel berdasarkan ID, termasuk genres, tags, author (username \u0026 profile_picture), dan daftar chapters.\n- Admin/Author: semua chapters (termasuk draft).\n- User lain/tanpa login: hanya chapter yang sudah published.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Detail novel",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Novel",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Detail novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Memperbarui novel milik author (atau admin), termasuk title, synopsis, cover, status, genre, dan tag. Mengembalikan detail lengkap novel + author + chapters.",
+                "consumes": [
+                    "application/json",
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Perbarui novel",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Novel",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Judul novel",
+                        "name": "title",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sinopsis novel",
+                        "name": "synopsis",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL cover baru atau path file yang diupload",
+                        "name": "cover_image",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "File cover (opsional, multipart)",
+                        "name": "cover_image",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (ongoing, completed, hiatus)",
+                        "name": "status",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Array ID genre (maksimal 1 genre). Jika kosong [] akan menghapus semua genre.",
+                        "name": "genre_ids",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Array ID tag. Jika kosong [] akan menghapus semua tag.",
+                        "name": "tag_ids",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Novel diperbarui (detail lengkap)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Payload tidak valid / status tidak valid / genre/tag tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang mengubah novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menyimpan perubahan / memuat ulang novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Menghapus novel milik author atau oleh admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Hapus novel",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Novel",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Novel dihapus",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Tidak berwenang menghapus novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Novel tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menghapus novel",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/novels/{novel_id}/chapters": {
             "get": {
                 "description": "Mengambil semua chapter untuk suatu novel. User biasa hanya melihat yang sudah terbit, author \u0026 admin bisa melihat termasuk draft.",
@@ -1766,6 +2243,79 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Gagal menyimpan password baru",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/novels": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar novel yang ditulis oleh user yang sedang login, termasuk genres, tags, author (username \u0026 profile_picture), dan jumlah chapter terbit.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Novels"
+                ],
+                "summary": "Daftar novel milik user login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter judul/slug (pencarian bebas)",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter status (ongoing, completed, hiatus)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Halaman (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Jumlah item per halaman (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar novel milik user dengan meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Status tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil novel milik user",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
