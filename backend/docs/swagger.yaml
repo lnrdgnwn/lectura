@@ -105,6 +105,93 @@ paths:
       summary: Atur genre yang tampil di halaman utama
       tags:
       - Genres
+  /admin/users:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar user dengan pagination. Hanya bisa diakses oleh
+        admin.
+      parameters:
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar user + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden - admin only
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: List semua user (admin)
+      tags:
+      - Users
+  /admin/users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus user berdasarkan ID. Hanya bisa diakses oleh admin.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Parameter id wajib / tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden - admin only
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus user (admin)
+      tags:
+      - Users
   /auth/login:
     post:
       consumes:
@@ -1037,6 +1124,142 @@ paths:
       summary: Update tag
       tags:
       - Tags
+  /users/me:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail profil user yang sedang login berdasarkan access_token
+        (cookie).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail profil berhasil diambil
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized / token tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Get profil user login
+      tags:
+      - Users
+    put:
+      consumes:
+      - multipart/form-data
+      - application/json
+      description: Mengubah username, email, dan/atau foto profil user yang sedang
+        login. Bisa via JSON atau form-data.
+      parameters:
+      - description: Username baru
+        in: formData
+        name: username
+        type: string
+      - description: Email baru
+        in: formData
+        name: email
+        type: string
+      - description: Password baru (opsional)
+        in: formData
+        name: password
+        type: string
+      - description: Foto profil baru
+        in: formData
+        name: profile_picture
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profil berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Username atau email sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan perubahan profil
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update profil user login
+      tags:
+      - Users
+  /users/me/changepassword:
+    put:
+      consumes:
+      - application/json
+      description: Mengganti password user yang sedang login. Wajib kirim password
+        lama & baru.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password berhasil diubah
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / rule gagal
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized / password lama salah
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan password baru
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Ganti password user login
+      tags:
+      - Users
 produces:
 - application/json
 schemes:

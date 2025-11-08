@@ -112,6 +112,18 @@ func getAuthFromAccessCookieUser(c *fiber.Ctx) (uint, string, error) {
 	return uid, role, nil
 }
 
+// GetMe godoc
+// @Summary      Get profil user login
+// @Description  Mengambil detail profil user yang sedang login berdasarkan access_token (cookie).
+// @Tags         Users
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "Detail profil berhasil diambil"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized / token tidak valid"
+// @Failure      404  {object}  map[string]interface{}  "User tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil user"
+// @Router       /users/me [get]
 func GetMe(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -129,6 +141,24 @@ func GetMe(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Detail profil berhasil diambil", u)
 }
 
+// UpdateProfile godoc
+// @Summary      Update profil user login
+// @Description  Mengubah username, email, dan/atau foto profil user yang sedang login. Bisa via JSON atau form-data.
+// @Tags         Users
+// @Security     CookieAuth
+// @Accept       multipart/form-data
+// @Accept       application/json
+// @Produce      json
+// @Param        username          formData  string  false  "Username baru"
+// @Param        email             formData  string  false  "Email baru"
+// @Param        password          formData  string  false  "Password baru (opsional)"
+// @Param        profile_picture   formData  file    false  "Foto profil baru"
+// @Success      200               {object}  map[string]interface{}  "Profil berhasil diperbarui"
+// @Failure      400               {object}  map[string]interface{}  "Payload tidak valid"
+// @Failure      401               {object}  map[string]interface{}  "Unauthorized"
+// @Failure      409               {object}  map[string]interface{}  "Username atau email sudah digunakan"
+// @Failure      500               {object}  map[string]interface{}  "Gagal menyimpan perubahan profil"
+// @Router       /users/me [put]
 func UpdateProfile(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -203,6 +233,20 @@ func UpdateProfile(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Profil berhasil diperbarui", u)
 }
 
+// ListUsers godoc
+// @Summary      List semua user (admin)
+// @Description  Mengambil daftar user dengan pagination. Hanya bisa diakses oleh admin.
+// @Tags         Users
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        page   query     int  false  "Halaman (default 1)"
+// @Param        limit  query     int  false  "Jumlah per halaman (default 20)"
+// @Success      200    {object}  map[string]interface{}  "Daftar user + meta pagination"
+// @Failure      401    {object}  map[string]interface{}  "Unauthorized"
+// @Failure      403    {object}  map[string]interface{}  "Forbidden - admin only"
+// @Failure      500    {object}  map[string]interface{}  "Gagal mengambil daftar user"
+// @Router       /admin/users [get]
 func ListUsers(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -241,6 +285,20 @@ func ListUsers(c *fiber.Ctx) error {
 	return userOKList(c, "Daftar user berhasil diambil", users, page, limit, total)
 }
 
+// ChangePassword godoc
+// @Summary      Ganti password user login
+// @Description  Mengganti password user yang sedang login. Wajib kirim password lama & baru.
+// @Tags         Users
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object  true  "Body: {\"old_password\": \"lama\", \"new_password\": \"baruMinimal8\"}"
+// @Success      200   {object}  map[string]interface{}  "Password berhasil diubah"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / rule gagal"
+// @Failure      401   {object}  map[string]interface{}  "Unauthorized / password lama salah"
+// @Failure      404   {object}  map[string]interface{}  "User tidak ditemukan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal menyimpan password baru"
+// @Router       /users/me/changepassword [put]
 func ChangePassword(c *fiber.Ctx) error {
 	uid, _, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
@@ -294,6 +352,20 @@ func ChangePassword(c *fiber.Ctx) error {
 	return userOK(c, http.StatusOK, "Password berhasil diubah", nil)
 }
 
+// DeleteUser godoc
+// @Summary      Hapus user (admin)
+// @Description  Menghapus user berdasarkan ID. Hanya bisa diakses oleh admin.
+// @Tags         Users
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  map[string]interface{}  "User berhasil dihapus"
+// @Failure      400  {object}  map[string]interface{}  "Parameter id wajib / tidak valid"
+// @Failure      401  {object}  map[string]interface{}  "Unauthorized"
+// @Failure      403  {object}  map[string]interface{}  "Forbidden - admin only"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus user"
+// @Router       /admin/users/{id} [delete]
 func DeleteUser(c *fiber.Ctx) error {
 	_, role, err := getAuthFromAccessCookieUser(c)
 	if err != nil {
