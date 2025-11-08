@@ -3,10 +3,30 @@ import { extractErrorMessage } from "./httpError";
 
 export async function getGenres() {
   try {
-    const res = await api.get("/api/genres");
+    const res = await api.get("api/genres");
     return res.data.data;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to fetch genres"));
+  }
+}
+
+export async function getHomeGenres() {
+  try {
+    const res = await api.get("/api/genres/home");
+    return res.data.data;
+  } catch (err) {
+    throw new Error(extractErrorMessage(err, "Failed to fetch home genres"));
+  }
+}
+
+export async function setGenresShowOnHome(genreIds) {
+  try {
+    const res = await api.put("/api/admin/genres/home", {
+      genre_ids: Array.isArray(genreIds) ? genreIds : [],
+    });
+    return res.data.data;
+  } catch (err) {
+    throw new Error(extractErrorMessage(err, "Failed to update home genres"));
   }
 }
 
@@ -34,18 +54,5 @@ export async function deleteGenre(id) {
     return res.data.data;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to delete genre"));
-  }
-}
-
-export async function updateGenreShowOnHome(id, show_on_home) {
-  try {
-    const res = await api.put(`/api/genres/${id}`, {
-      show_on_home: !!show_on_home,
-    });
-    return res.data.data;
-  } catch (err) {
-    throw new Error(
-      extractErrorMessage(err, "Failed to update show_on_home flag")
-    );
   }
 }

@@ -1,70 +1,123 @@
+/* === Import Tailwind dan Font === */
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Urbanist:ital,wght@0,100..900;1,100..900&display=swap");
 
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* === Import Swiper === */
+@import "swiper/css";
+@import "swiper/css/navigation";
+@import "swiper/css/pagination";
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* === Base style === */
+@layer base {
+  html {
+    font-family: "Urbanist", system-ui, sans-serif;
+  }
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+@theme {
+  --color-primary: #435058;
+  --color-primary-dark: #374149;
+  --color-accent: #f6f7fc;
+  --color-surface: #f1f3f6;
 }
 
-body {
-  margin: 0;
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* === Swiper Styles === */
+.mySwiper {
+  width: 100%;
+  height: 100%;
+}
+
+/* Tombol panah kiri-kanan */
+.swiper-button-next,
+.swiper-button-prev {
+  color: #fff;
+  background-color: rgba(0, 0, 0, 0.4);
+  border-radius: 100%;
+  width: 45px;
+  height: 45px;
   display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 10;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* SVG di tengah tombol */
+.swiper-button-next svg,
+.swiper-button-prev svg,
+.swiper-navigation-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  margin: auto;
+  color: currentColor;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+.swiper-button-prev {
+  left: 20px !important;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+.swiper-button-next {
+  right: 20px !important;
+}
+
+/* Hapus pseudo bawaan Swiper agar SVG tampil bersih */
+.swiper-button-next::after,
+.swiper-button-prev::after {
+  display: none;
+}
+
+/* Hover efek */
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Bullet pagination */
+.swiper-pagination-bullet {
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 1;
+  margin: 0 6px !important;
+  border-radius: 100%;
+  transition: all 0.3s ease;
+}
+
+.swiper-pagination-bullet-active {
+  background: #38bdf8; /* Sky blue */
+  transform: scale(1.25);
+}
+
+/* Posisi bullet */
+.swiper-pagination {
+  bottom: 18px !important;
+}
+
+/* Responsif — tombol lebih kecil di layar kecil */
+@media (max-width: 640px) {
+  .swiper-button-next,
+  .swiper-button-prev {
+    width: 35px;
+    height: 35px;
   }
-  a:hover {
-    color: #747bff;
+
+  .swiper-pagination-bullet {
+    width: 5px;
+    height: 5px;
   }
-  button {
-    background-color: #f9f9f9;
+
+  .swiper-button-next svg,
+  .swiper-button-prev svg {
+    width: 16px;
+    height: 16px;
   }
 }

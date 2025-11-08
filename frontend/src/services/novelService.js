@@ -22,7 +22,6 @@ export async function getMyNovels() {
 export async function getNovelsByGenre(genreId) {
   try {
     const res = await api.get(`/api/novels/by-genre/${genreId}`);
-    console.log(res?.data?.data);
     return res?.data?.data;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to fetch novels"));
@@ -32,7 +31,6 @@ export async function getNovelsByGenre(genreId) {
 export async function getNovelById(id) {
   try {
     const res = await api.get(`/api/novels/${id}`);
-    console.log(res.data.data);
     return res?.data?.data;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to fetch novel"));
