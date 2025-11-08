@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
-	"strconv"
+	"final_project/models"
 	"fmt"
 	"os"
-	"final_project/models"
+	"strconv"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
@@ -27,6 +27,7 @@ func DBLoad() {
 	if err != nil {
 		panic("Failed to connect to database")
 	}
+	db = db.Debug()
 	fmt.Println("Database connection established")
 	DB = db
 }
@@ -52,7 +53,7 @@ func Redis() {
 }
 
 func DBMigrate() {
-	if err := DB.Debug().AutoMigrate(&models.Bookmark{}, models.Chapter{}, models.Genre{}, models.Novel{}, models.User{}, models.Tag{},models.RefreshToken{}); err != nil {
+	if err := DB.Debug().AutoMigrate(&models.Bookmark{}, models.Chapter{}, models.Genre{}, models.Novel{}, models.User{}, models.Tag{}, models.RefreshToken{}); err != nil {
 		panic("Failed to migrate database")
 	}
 	fmt.Println("Database migration completed")

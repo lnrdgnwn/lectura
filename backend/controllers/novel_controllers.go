@@ -442,7 +442,8 @@ func GetNovelByGenreID(c *fiber.Ctx) error {
 	}
 	offset := (page - 1) * limit
 
-	base := database.DB.Model(&models.Novel{}).
+	base := database.DB.
+		Model(&models.Novel{}).
 		Joins("JOIN novel_genres ng ON ng.novel_id = novels.id").
 		Where("ng.genre_id = ?", genreID)
 
@@ -455,14 +456,117 @@ func GetNovelByGenreID(c *fiber.Ctx) error {
 	if err := base.
 		Preload("Genres").
 		Preload("Tags").
-		Order("created_at DESC").
+		Order("novels.created_at DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&novels).Error; err != nil {
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel untuk genre ini", err)
 	}
 
-	return novelListOK(c, "Daftar novel berdasarkan genre", novels, page, limit, total)
+	if len(novels) == 0 {
+		return novelListOK(c, "Daftar novel berdasarkan genre", []any{}, page, limit, total)
+	}
+
+	authorIDSet := make(map[uint]struct{})
+	novelIDs := make([]uint, 0, len(novels))
+	for _, n := range novels {
+		if n.AuthorID != 0 {
+			authorIDSet[n.AuthorID] = struct{}{}
+		}
+		novelIDs = append(novelIDs, n.ID)
+	}
+
+	authorIDs := make([]uint, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+
+	type AuthorMini struct {
+		ID             uint    `json:"id"`
+		Username       string  `json:"username"`
+		ProfilePicture *string `json:"profile_picture"`
+	}
+
+	authorsMap := make(map[uint]AuthorMini)
+	if len(authorIDs) > 0 {
+		var users []models.User
+		if err := database.DB.
+			Select("id, username, profile_picture").
+			Where("id IN ?", authorIDs).
+			Find(&users).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data author", err)
+		}
+		for _, u := range users {
+			authorsMap[u.ID] = AuthorMini{
+				ID:             u.ID,
+				Username:       u.Username,
+				ProfilePicture: u.ProfilePicture,
+			}
+		}
+	}
+
+	type ChapterCountRow struct {
+		NovelID uint  `json:"novel_id"`
+		Count   int64 `json:"count"`
+	}
+
+	chapterCounts := make(map[uint]int64)
+	if len(novelIDs) > 0 {
+		var rows []ChapterCountRow
+		if err := database.DB.
+			Model(&models.Chapter{}).
+			Select("novel_id, COUNT(*) as count").
+			Where("novel_id IN ? AND published_at IS NOT NULL AND published_at <= ?", novelIDs, time.Now()).
+			Group("novel_id").
+			Scan(&rows).Error; err != nil {
+			return novelFail(c, http.StatusInternalServerError, "Gagal menghitung jumlah chapter", err)
+		}
+		for _, r := range rows {
+			chapterCounts[r.NovelID] = r.Count
+		}
+	}
+
+	type GenreNovelItem struct {
+		ID           uint           `json:"id"`
+		Title        string         `json:"title"`
+		Slug         string         `json:"slug"`
+		Synopsis     *string        `json:"synopsis"`
+		CoverImage   *string        `json:"cover_image"`
+		Status       string         `json:"status"`
+		Author       *AuthorMini    `json:"author"`
+		Genres       []models.Genre `json:"genres"`
+		Tags         []models.Tag   `json:"tags"`
+		ChapterCount int64          `json:"chapter_count"`
+		CreatedAt    time.Time      `json:"created_at"`
+		UpdatedAt    time.Time      `json:"updated_at"`
+	}
+
+	resp := make([]GenreNovelItem, 0, len(novels))
+	for _, n := range novels {
+		var authorPtr *AuthorMini
+		if am, ok := authorsMap[n.AuthorID]; ok {
+			// copy supaya pointer aman
+			a := am
+			authorPtr = &a
+		}
+
+		resp = append(resp, GenreNovelItem{
+			ID:           n.ID,
+			Title:        n.Title,
+			Slug:         n.Slug,
+			Synopsis:     n.Synopsis,
+			CoverImage:   n.CoverImage,
+			Status:       n.Status,
+			Author:       authorPtr,
+			Genres:       n.Genres,
+			Tags:         n.Tags,
+			ChapterCount: chapterCounts[n.ID],
+			CreatedAt:    n.CreatedAt,
+			UpdatedAt:    n.UpdatedAt,
+		})
+	}
+
+	return novelListOK(c, "Daftar novel berdasarkan genre", resp, page, limit, total)
 }
 
 func GetMyNovels(c *fiber.Ctx) error {
@@ -483,7 +587,9 @@ func GetMyNovels(c *fiber.Ctx) error {
 	}
 	offset := (page - 1) * limit
 
-	countQB := database.DB.Model(&models.Novel{}).Where("author_id = ?", uid)
+	countQB := database.DB.
+		Model(&models.Novel{}).
+		Where("author_id = ?", uid)
 
 	if q != "" {
 		like := "%" + q + "%"
@@ -527,7 +633,93 @@ func GetMyNovels(c *fiber.Ctx) error {
 		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil novel milik user", err)
 	}
 
-	return novelListOK(c, "Daftar novel milik user", novels, page, limit, total)
+	if len(novels) == 0 {
+		return novelListOK(c, "Daftar novel milik user", []any{}, page, limit, total)
+	}
+
+	type AuthorMini struct {
+		ID             uint    `json:"id"`
+		Username       string  `json:"username"`
+		ProfilePicture *string `json:"profile_picture"`
+	}
+
+	var author models.User
+	if err := database.DB.
+		Select("id, username, profile_picture").
+		First(&author, uid).Error; err != nil {
+
+		return novelFail(c, http.StatusInternalServerError, "Gagal mengambil data author", err)
+	}
+
+	authorMini := AuthorMini{
+		ID:             author.ID,
+		Username:       author.Username,
+		ProfilePicture: author.ProfilePicture,
+	}
+
+	novelIDs := make([]uint, 0, len(novels))
+	for _, n := range novels {
+		novelIDs = append(novelIDs, n.ID)
+	}
+
+	type ChapterCountRow struct {
+		NovelID uint  `json:"novel_id"`
+		Count   int64 `json:"count"`
+	}
+
+	chapterCounts := make(map[uint]int64)
+
+	if len(novelIDs) > 0 {
+		var rows []ChapterCountRow
+		if err := database.DB.
+			Model(&models.Chapter{}).
+			Select("novel_id, COUNT(*) as count").
+			Where("novel_id IN ? AND published_at IS NOT NULL AND published_at <= ?", novelIDs, time.Now()).
+			Group("novel_id").
+			Scan(&rows).Error; err != nil {
+
+			return novelFail(c, http.StatusInternalServerError, "Gagal menghitung jumlah chapter", err)
+		}
+
+		for _, r := range rows {
+			chapterCounts[r.NovelID] = r.Count
+		}
+	}
+
+	type MyNovelItem struct {
+		ID            uint           `json:"id"`
+		Title         string         `json:"title"`
+		Slug          string         `json:"slug"`
+		Synopsis      *string        `json:"synopsis"`
+		CoverImage    *string        `json:"cover_image"`
+		Status        string         `json:"status"`
+		Author        AuthorMini     `json:"author"`
+		Genres        []models.Genre `json:"genres"`
+		Tags          []models.Tag   `json:"tags"`
+		ChapterCount  int64          `json:"chapter_count"`
+		CreatedAt     time.Time      `json:"created_at"`
+		UpdatedAt     time.Time      `json:"updated_at"`
+	}
+
+	resp := make([]MyNovelItem, 0, len(novels))
+	for _, n := range novels {
+		resp = append(resp, MyNovelItem{
+			ID:           n.ID,
+			Title:        n.Title,
+			Slug:         n.Slug,
+			Synopsis:     n.Synopsis,
+			CoverImage:   n.CoverImage,
+			Status:       n.Status,
+			Author:       authorMini,
+			Genres:       n.Genres,
+			Tags:         n.Tags,
+			ChapterCount: chapterCounts[n.ID],
+			CreatedAt:    n.CreatedAt,
+			UpdatedAt:    n.UpdatedAt,
+		})
+	}
+
+	return novelListOK(c, "Daftar novel milik user", resp, page, limit, total)
 }
 
 func PostNovel(c *fiber.Ctx) error {
