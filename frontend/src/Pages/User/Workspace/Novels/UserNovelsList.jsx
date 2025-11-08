@@ -264,7 +264,7 @@ export default function UserNovelsList() {
                       <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-2 gap-y-1">
                         <span>ID: {novel.id}</span>
                         <span>•</span>
-                        <span>Chapters: {getChapterCount(novel)}</span>
+                        <span>Chapters: {novel.chapter_count}</span>
                       </div>
 
                       <div className="mt-1">
@@ -384,7 +384,7 @@ export default function UserNovelsList() {
                             {novel.title}
                           </td>
                           <td className="px-6 py-3 text-center">
-                            {getChapterCount(novel)}
+                            {novel.chapter_count}
                           </td>
                           <td className="px-6 py-3 capitalize">
                             <span

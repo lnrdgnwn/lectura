@@ -2,12 +2,13 @@ import { useEffect } from "react";
 import { FaUser, FaBook, FaBars, FaSignOutAlt, FaHome } from "react-icons/fa";
 import { IoClose } from "react-icons/io5";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext"; // sesuaikan path
 
 export default function WorkspaceSidebar({ isOpen, setIsOpen }) {
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const sidebarWidth = isOpen ? "w-64" : "w-20";
 
-  // === Auto close ketika resize ke desktop ===
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768 && isOpen) {
@@ -17,6 +18,15 @@ export default function WorkspaceSidebar({ isOpen, setIsOpen }) {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [isOpen, setIsOpen]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/login");
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
 
   return (
     <>
@@ -72,6 +82,7 @@ export default function WorkspaceSidebar({ isOpen, setIsOpen }) {
 
         {/* Logout */}
         <button
+          onClick={handleLogout}
           className={`flex items-center ${
             isOpen ? "justify-start gap-3 px-3" : "justify-center"
           } 
@@ -100,7 +111,6 @@ export default function WorkspaceSidebar({ isOpen, setIsOpen }) {
           <span>Novels</span>
         </NavLink>
 
-        {/* Back to Home */}
         <button
           onClick={() => navigate("/")}
           className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-xs text-white hover:bg-white/10 rounded-md transition cursor-pointer"
@@ -109,25 +119,14 @@ export default function WorkspaceSidebar({ isOpen, setIsOpen }) {
           <span>Home</span>
         </button>
 
-        {/* Logout */}
         <button
+          onClick={handleLogout}
           className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-xs text-white hover:bg-white/10 rounded-md transition cursor-pointer"
-          onClick={() => setIsOpen(false)}
         >
           <FaSignOutAlt size={18} />
           <span>Logout</span>
         </button>
       </aside>
-
-      {/* ===== Mobile Floating Toggle ===== */}
-      {!isOpen && (
-        <button
-          className="md:hidden fixed bottom-16 right-4 z-50 bg-primary text-white p-3 rounded-full shadow-lg cursor-pointer hover:bg-primary/90 transition"
-          onClick={() => setIsOpen(true)}
-        >
-          <FaBars size={20} />
-        </button>
-      )}
     </>
   );
 }

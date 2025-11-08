@@ -84,13 +84,6 @@ export default function AdminNovelsDetail() {
       setLoading(true);
       try {
         const data = await getNovelById(id);
-
-        const ownerId = data?.author?.id ?? data?.author_id;
-        if (ownerId && user?.id && Number(ownerId) !== Number(user.id)) {
-          toast.error("You don't have access to that novel.");
-          navigate("/admin/novels", { replace: true });
-          return;
-        }
         setNovel(data);
       } catch (e) {
         toast.error(e?.message || "Failed to load novel.");

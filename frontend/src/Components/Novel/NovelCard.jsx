@@ -113,7 +113,6 @@ export default function NovelCard({ novel }) {
               <h1 className="text-base sm:text-xl font-bold mb-2">
                 {novel.title}
               </h1>
-
               {/* Meta */}
               <div className="flex flex-wrap items-center gap-4 mb-2 text-gray-600">
                 <span className="bg-blue-100 text-primary px-3 py-1 rounded-full text-sm font-medium capitalize">
@@ -131,17 +130,9 @@ export default function NovelCard({ novel }) {
                   </span>
                 </span>
               </div>
-
               <div className="text-gray-700">
                 Author: <span className="font-medium">{authorName}</span>
               </div>
-
-              {/* tidak tampilkan pesan sukses. error tetap ada */}
-              {bmError && (
-                <div className="mt-2 rounded bg-red-50 text-gray-700 px-3 py-2 text-sm">
-                  {bmError}
-                </div>
-              )}
             </div>
 
             <div className="gap-3 hidden sm:flex">

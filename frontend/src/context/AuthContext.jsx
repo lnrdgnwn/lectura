@@ -6,8 +6,7 @@ import {
   logoutUser,
   bootstrapSession,
   refreshSession,
-} from "../services/AuthService"; // <-- pastikan kapitalisasi sama dengan file-mu
-// (opsional) hapus getMyProfile kalau tidak dipakai
+} from "../services/AuthService";
 
 const AuthContext = createContext(null);
 
@@ -34,21 +33,21 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (credentials) => {
-    const me = await loginUser(credentials); // returns user
+    const me = await loginUser(credentials);
     setUser(me);
     setIsAuthenticated(true);
     return me;
   };
 
   const register = async (payload) => {
-    const me = await registerUser(payload); // returns user
+    const me = await registerUser(payload);
     setUser(me);
     setIsAuthenticated(true);
     return me;
   };
 
   const refresh = async () => {
-    const me = await refreshSession(); // returns user | null
+    const me = await refreshSession();
     if (me) {
       setUser(me);
       setIsAuthenticated(true);
@@ -65,10 +64,13 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false);
   };
 
+  const isAdmin = !!(user?.role === "admin" || user?.is_admin === true);
+
   const value = useMemo(
     () => ({
       user,
       isAuthenticated,
+      isAdmin,
       initializing,
       login,
       register,

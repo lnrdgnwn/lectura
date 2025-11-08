@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import { FaUser, FaBook, FaBars, FaSignOutAlt, FaEdit } from "react-icons/fa";
 import { IoClose } from "react-icons/io5";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext"; // pastikan path-nya sesuai
 
 export default function AdminSidebar({ isOpen, setIsOpen }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const sidebarWidth = isOpen ? "w-64" : "w-20";
 
-  // Auto close ketika resize ke desktop
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768 && isOpen) {
@@ -16,6 +18,15 @@ export default function AdminSidebar({ isOpen, setIsOpen }) {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [isOpen, setIsOpen]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/admin-login");
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
 
   return (
     <>
@@ -88,6 +99,7 @@ export default function AdminSidebar({ isOpen, setIsOpen }) {
         </nav>
 
         <button
+          onClick={handleLogout}
           className={`flex items-center ${
             isOpen ? "justify-start gap-3 px-3" : "justify-center"
           } 
@@ -143,23 +155,13 @@ export default function AdminSidebar({ isOpen, setIsOpen }) {
         </NavLink>
 
         <button
+          onClick={handleLogout}
           className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-xs text-white"
-          onClick={() => setIsOpen(false)}
         >
           <FaSignOutAlt size={18} />
           <span>Logout</span>
         </button>
       </aside>
-
-      {/* Optional: Floating toggle (tetap disembunyikan karena md:hidden sudah cover) */}
-      {!isOpen && (
-        <button
-          className="hidden md:hidden fixed bottom-16 right-4 z-50 bg-primary text-white p-3 rounded-full shadow-lg"
-          onClick={() => setIsOpen(true)}
-        >
-          <FaBars size={20} />
-        </button>
-      )}
     </>
   );
 }

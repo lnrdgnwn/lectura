@@ -9,7 +9,7 @@ import {
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
-import { getMyNovels, deleteNovel } from "../../../services/novelService";
+import { getNovels, deleteNovel } from "../../../services/novelService";
 import { toast } from "react-hot-toast";
 
 const ITEMS_PER_PAGE = 8;
@@ -51,7 +51,7 @@ function DeleteModal({ show, title, onClose, onConfirm }) {
 
 export default function AdminNovelsList() {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isAdmin, initializing } = useAuth();
 
   const [myNovels, setMyNovels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,8 @@ export default function AdminNovelsList() {
 
   useEffect(() => {
     async function load() {
-      if (!isAuthenticated || !user) {
+      if (initializing) return; // ⬅️ tunggu
+      if (!isAuthenticated || !user || !isAdmin) {
         setMyNovels([]);
         setLoading(false);
         return;
@@ -80,7 +81,7 @@ export default function AdminNovelsList() {
       setLoading(true);
       setLoadError(null);
       try {
-        const list = await getMyNovels();
+        const list = await getNovels();
         setMyNovels(list || []);
       } catch (e) {
         setLoadError(e?.message || "Failed to load novels");
@@ -89,7 +90,7 @@ export default function AdminNovelsList() {
       }
     }
     load();
-  }, [isAuthenticated, user?.id]);
+  }, [initializing, isAuthenticated, isAdmin, user?.id]);
 
   const handleSort = (key) => {
     setSortConfig((prev) =>
