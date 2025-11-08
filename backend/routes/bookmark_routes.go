@@ -8,7 +8,8 @@ import (
 )
 
 func bookmarkRoutes(api fiber.Router) {
-	api.Get("/users/me/bookmarks",  middlewares.AuthMiddleware(), controllers.ListBookmarks)
+	api.Get("/bookmarks",  middlewares.AuthMiddleware(), controllers.ListBookmarks)
+	api.Get("/bookmarks/novels", middlewares.AuthMiddleware(), controllers.GetNovelByBookmarks)
 	api.Post("/bookmarks",  middlewares.AuthMiddleware(), controllers.AddBookmark)
 	api.Delete("/bookmarks/:novel_id", middlewares.AuthMiddleware(), controllers.RemoveBookmark)
 }

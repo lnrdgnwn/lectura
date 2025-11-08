@@ -165,6 +165,32 @@ paths:
       tags:
       - Auth
   /bookmarks:
+    get:
+      description: Mengambil daftar bookmark milik user yang sedang login, termasuk
+        info singkat novel.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar bookmark dengan meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil bookmark
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: List bookmark milik user
+      tags:
+      - Bookmarks
     post:
       consumes:
       - application/json
@@ -253,15 +279,24 @@ paths:
       summary: Hapus bookmark novel
       tags:
       - Bookmarks
-  /users/me/bookmarks:
+  /bookmarks/novels:
     get:
-      description: Mengambil daftar bookmark milik user yang sedang login, termasuk
-        info singkat novel.
+      description: Mengambil daftar novel yang dibookmark oleh user login, lengkap
+        dengan author & chapters.
+      parameters:
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 20)
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Daftar bookmark dengan meta pagination
+          description: Daftar novel dari bookmark dengan meta pagination
           schema:
             additionalProperties: true
             type: object
@@ -271,13 +306,13 @@ paths:
             additionalProperties: true
             type: object
         "500":
-          description: Gagal mengambil bookmark
+          description: Gagal mengambil data
           schema:
             additionalProperties: true
             type: object
       security:
       - CookieAuth: []
-      summary: List bookmark milik user
+      summary: Daftar novel dari bookmark user
       tags:
       - Bookmarks
 produces:

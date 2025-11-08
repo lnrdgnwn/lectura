@@ -206,6 +206,44 @@ const docTemplate = `{
             }
         },
         "/bookmarks": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar bookmark milik user yang sedang login, termasuk info singkat novel.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bookmarks"
+                ],
+                "summary": "List bookmark milik user",
+                "responses": {
+                    "200": {
+                        "description": "Daftar bookmark dengan meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil bookmark",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -276,6 +314,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/bookmarks/novels": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar novel yang dibookmark oleh user login, lengkap dengan author \u0026 chapters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bookmarks"
+                ],
+                "summary": "Daftar novel dari bookmark user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Halaman (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Jumlah per halaman (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar novel dari bookmark dengan meta pagination",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal mengambil data",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/bookmarks/{novel_id}": {
             "delete": {
                 "security": [
@@ -331,46 +423,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Gagal menghapus bookmark",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/users/me/bookmarks": {
-            "get": {
-                "security": [
-                    {
-                        "CookieAuth": []
-                    }
-                ],
-                "description": "Mengambil daftar bookmark milik user yang sedang login, termasuk info singkat novel.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Bookmarks"
-                ],
-                "summary": "List bookmark milik user",
-                "responses": {
-                    "200": {
-                        "description": "Daftar bookmark dengan meta pagination",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Gagal mengambil bookmark",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
