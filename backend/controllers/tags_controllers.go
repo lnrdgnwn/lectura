@@ -67,6 +67,18 @@ func generateSlug(s string) string {
 	return s
 }
 
+// ListTags godoc
+// @Summary      List tag
+// @Description  Mengambil daftar tag dengan opsi pencarian dan pagination.
+// @Tags         Tags
+// @Accept       json
+// @Produce      json
+// @Param        q      query     string  false  "Cari berdasarkan name atau slug"
+// @Param        page   query     int     false  "Halaman (default 1)"
+// @Param        limit  query     int     false  "Jumlah per halaman (default 50)"
+// @Success      200    {object}  map[string]interface{}  "Daftar tag + meta pagination"
+// @Failure      500    {object}  map[string]interface{}  "Gagal mengambil daftar tag"
+// @Router       /tags [get]
 func ListTags(c *fiber.Ctx) error {
 	q := strings.TrimSpace(c.Query("q", ""))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -101,6 +113,17 @@ func ListTags(c *fiber.Ctx) error {
 	return tagOKList(c, "Daftar tag berhasil diambil", tags, page, limit, total)
 }
 
+// GetTag godoc
+// @Summary      Detail tag
+// @Description  Mengambil detail tag berdasarkan ID atau slug.
+// @Tags         Tags
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "ID atau slug tag"
+// @Success      200  {object}  map[string]interface{}  "Detail tag"
+// @Failure      404  {object}  map[string]interface{}  "Tag tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal mengambil tag"
+// @Router       /tags/{id} [get]
 func GetTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag
@@ -124,6 +147,19 @@ func GetTag(c *fiber.Ctx) error {
 	return tagOK(c, http.StatusOK, "Detail tag berhasil diambil", t)
 }
 
+// CreateTag godoc
+// @Summary      Buat tag baru
+// @Description  Membuat tag baru dengan name & slug unik. Jika slug kosong akan digenerate otomatis dari name.
+// @Tags         Tags
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object  true  "Body: {\"name\": \"Romance\", \"slug\": \"romance\"}"
+// @Success      201   {object}  map[string]interface{}  "Tag berhasil dibuat"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / name kosong"
+// @Failure      409   {object}  map[string]interface{}  "Name atau slug sudah digunakan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal membuat tag"
+// @Router       /tags [post]
 func CreateTag(c *fiber.Ctx) error {
 	var payload struct {
 		Name string `json:"name"`
@@ -166,6 +202,21 @@ func CreateTag(c *fiber.Ctx) error {
 	return tagOK(c, http.StatusCreated, "Tag berhasil dibuat", tag)
 }
 
+// UpdateTag godoc
+// @Summary      Update tag
+// @Description  Mengubah name dan/atau slug tag berdasarkan ID atau slug. Wajib unik.
+// @Tags         Tags
+// @Security     CookieAuth
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string  true  "ID atau slug tag"
+// @Param        body  body      object  true  "Body: {\"name\": \"Nama Baru\", \"slug\": \"slug-baru\"} (opsional per field)"
+// @Success      200   {object}  map[string]interface{}  "Tag berhasil diperbarui"
+// @Failure      400   {object}  map[string]interface{}  "Payload tidak valid / field kosong"
+// @Failure      404   {object}  map[string]interface{}  "Tag tidak ditemukan"
+// @Failure      409   {object}  map[string]interface{}  "Name atau slug sudah digunakan"
+// @Failure      500   {object}  map[string]interface{}  "Gagal memperbarui tag"
+// @Router       /tags/{id} [put]
 func UpdateTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag
@@ -234,6 +285,17 @@ func UpdateTag(c *fiber.Ctx) error {
 	return tagOK(c, http.StatusOK, "Tag berhasil diperbarui", t)
 }
 
+// DeleteTag godoc
+// @Summary      Hapus tag
+// @Description  Menghapus tag berdasarkan ID atau slug. Relasi many2many ke novel_tags akan ikut terhapus sesuai constraint.
+// @Tags         Tags
+// @Security     CookieAuth
+// @Produce      json
+// @Param        id   path      string  true  "ID atau slug tag"
+// @Success      200  {object}  map[string]interface{}  "Tag berhasil dihapus"
+// @Failure      404  {object}  map[string]interface{}  "Tag tidak ditemukan"
+// @Failure      500  {object}  map[string]interface{}  "Gagal menghapus tag"
+// @Router       /tags/{id} [delete]
 func DeleteTag(c *fiber.Ctx) error {
 	param := c.Params("id")
 	var t models.Tag

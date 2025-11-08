@@ -849,6 +849,194 @@ paths:
       summary: Daftar chapter per novel
       tags:
       - Chapters
+  /tags:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar tag dengan opsi pencarian dan pagination.
+      parameters:
+      - description: Cari berdasarkan name atau slug
+        in: query
+        name: q
+        type: string
+      - description: Halaman (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Jumlah per halaman (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daftar tag + meta pagination
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil daftar tag
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List tag
+      tags:
+      - Tags
+    post:
+      consumes:
+      - application/json
+      description: Membuat tag baru dengan name & slug unik. Jika slug kosong akan
+        digenerate otomatis dari name.
+      parameters:
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Tag berhasil dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / name kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal membuat tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Buat tag baru
+      tags:
+      - Tags
+  /tags/{id}:
+    delete:
+      description: Menghapus tag berdasarkan ID atau slug. Relasi many2many ke novel_tags
+        akan ikut terhapus sesuai constraint.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tag berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menghapus tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Hapus tag
+      tags:
+      - Tags
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail tag berdasarkan ID atau slug.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detail tag
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal mengambil tag
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detail tag
+      tags:
+      - Tags
+    put:
+      consumes:
+      - application/json
+      description: Mengubah name dan/atau slug tag berdasarkan ID atau slug. Wajib
+        unik.
+      parameters:
+      - description: ID atau slug tag
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Body: {\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tag berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Payload tidak valid / field kosong
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Tag tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Name atau slug sudah digunakan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal memperbarui tag
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Update tag
+      tags:
+      - Tags
 produces:
 - application/json
 schemes:
